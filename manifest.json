@@ -1,0 +1,9 @@
+{
+    "name": "Redragon K580",
+    "vendorId": 12815,
+    "productId": 20480,
+    "version": "1.0.0",
+    "author": "Alexey + Copilot",
+    "type": "keyboard",
+    "entry": "device.js"
+}
