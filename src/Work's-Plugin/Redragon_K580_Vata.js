@@ -3,7 +3,7 @@ import DeviceDiscovery from "@SignalRGB/DeviceDiscovery";
 export function FPS() { return 30; } // Ограничиваем отрисовку до 30 кадров
 export function Name() { return "Redragon K580 Vata"; }
 export function VendorId() { return 0x320F; }
-export function ProductId() { return Object.keys(EVISIONdeviceLibrary.PIDLibrary); }
+export function ProductId() { return 0x5000; }
 export function Publisher() { return "Custom"; }
 export function Size() { return [24, 8]; }
 export function DeviceType(){return "keyboard";}
