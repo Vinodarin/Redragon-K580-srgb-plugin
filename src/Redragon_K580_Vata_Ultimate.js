@@ -1,86 +1,91 @@
-/**
- * Redragon K580 Vata (Ultimate Edition)
- * Optimized for VS11K33A (VID: 320F, PID: 5000)
- * Based on official SignalRGB Plugin API 2026
- * Co-authored by Vinodarin & Dasha
- */
+export function Name() { return "Redragon K580 Vata (Clean)"; }
+export function Publisher() { return "Vinodarin"; }
+export function Documentation() { return "https://github.com/Vinodarin/Redragon-K580-srgb-plugin"; }
+export function DeviceId() { return "Redragon_K580_Vata_5000"; }
 
-export function Name() { return "Redragon K580 Vata (Ultimate)"; }
-export function DeviceId() { return "K580_320F_5000_V2"; }
-export function Publisher() { return "Vinodarin & Dasha"; }
-
-// Привязка к железу
-export function ArrayOfPids() { return [0x5000]; }
-export function ArrayOfVids() { return [0x320F]; }
-
-export function Register() {
-    // Согласно документации: UsagePage 0xff00, Usage 0x01 для EVision
-    Registers.RegisterUsage(0xff00, 0x01);
+// Оставляем только наше устройство
+export function Discovery() {
+    factory.RegisterUsbDriver(0x320F, 0x5000, 0x0001); 
 }
-
-export function ControllableParameters() {
-	return [
-		{"property":"lightingMode", "group":"lighting", "label":"Lighting Mode", "type":"combobox", "values":["Direct", "Disabled"], "default":"Direct"},
-	];
-}
-
-// Константы протокола
-const CMD_INIT = [0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-const CMD_TERM = [0x04, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 
 export function Initialize() {
-    // Документация рекомендует проверять, открыто ли устройство
-    device.write([0x00].concat(CMD_INIT), 65);
-    device.pause(20);
-    device.write([0x00, 0x05, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], 65);
+    window.libs.Log("K580 Vata: Initializing...");
+    // Прямая отправка инициализации для VS11K33A
+    device.write([0x00, 0x04, 0x03, 0x00, 0x00, 0x02], 64);
+    device.pause(10);
 }
 
+// Рендер оставляем как в рабочем оригинале
 export function Render() {
-    const rgbData = [];
-    for (let i = 0; i < device.count(); i++) {
-        const color = device.getRGB(i);
-        rgbData.push(color.r, color.g, color.b);
-    }
-    sendPackets(rgbData);
+    sendColors();
 }
 
-function sendPackets(data) {
-    let offset = 0;
-    let packetIdx = 0;
+function sendColors() {
+    // Логика пакетов из твоего рабочего плагина
+    for (let packetIdx = 0; packetIdx < 7; packetIdx++) {
+        let packet = new Array(64).fill(0);
+        packet[0] = 0x00;
+        packet[1] = 0x05;
+        packet[2] = 0x01;
+        packet[3] = packetIdx;
+        packet[4] = 0x00;
+        packet[5] = 0x15; // Длина данных в пакете (обычно 21 для этого контроллера)
 
-    while (offset < data.length) {
-        const packet = new Array(65).fill(0);
-        packet[0] = 0x00; // Report ID
-        packet[1] = 0x05; // Header
-        packet[2] = packetIdx;
-
-        for (let i = 0; i < 60 && (offset + i) < data.length; i++) {
-            packet[i + 3] = data[offset + i];
+        for (let i = 0; i < 20; i++) {
+            let ledIdx = packetIdx * 20 + i;
+            if (ledIdx < vLedNames.length) {
+                let color = device.getRGB(vLedPositions[ledIdx][0], vLedPositions[ledIdx][1]);
+                packet[6 + i * 3] = color[0];
+                packet[7 + i * 3] = color[1];
+                packet[8 + i * 3] = color[2];
+            }
         }
-
-        device.write(packet, 65);
-        offset += 60;
-        packetIdx++;
+        device.write(packet, 64);
     }
 }
 
-export function Uninitialize() {
-    device.write([0x00].concat(CMD_TERM), 65);
+export function OnShutdown() {
+    device.write([0x00, 0x04, 0x02, 0x00, 0x00, 0x02], 64);
 }
 
-// Карта светодиодов (Клавиши + Боковые полосы)
-const vKeys = [
-    ["Esc", [0, 0]], ["F1", [2, 0]], ["F2", [3, 0]], ["F3", [4, 0]], ["F4", [5, 0]], ["F5", [6, 0]], ["F6", [7, 0]], ["F7", [8, 0]], ["F8", [9, 0]], ["F9", [10, 0]], ["F10", [11, 0]], ["F11", [12, 0]], ["F12", [13, 0]], ["Prt", [14, 0]], ["Scr", [15, 0]], ["Pause", [16, 0]],
-    ["~", [0, 1]], ["1", [1, 1]], ["2", [2, 1]], ["3", [3, 1]], ["4", [4, 1]], ["5", [5, 1]], ["6", [6, 1]], ["7", [7, 1]], ["8", [8, 1]], ["9", [9, 1]], ["0", [10, 1]], ["-", [11, 1]], ["=", [12, 1]], ["Back", [14, 1]], ["Ins", [14, 1]], ["Home", [15, 1]], ["PgUp", [16, 1]], ["NumLock", [17, 1]], ["/", [18, 1]], ["*", [19, 1]], ["-", [20, 1]],
-    ["Tab", [0, 2]], ["Q", [1, 2]], ["W", [2, 2]], ["E", [3, 2]], ["R", [4, 2]], ["T", [5, 2]], ["Y", [6, 2]], ["U", [7, 2]], ["I", [8, 2]], ["O", [9, 2]], ["P", [10, 2]], ["[", [11, 2]], ["]", [12, 2]], ["\\", [13, 2]], ["Del", [14, 2]], ["End", [15, 2]], ["PgDn", [16, 2]], ["7", [17, 2]], ["8", [18, 2]], ["9", [19, 2]], ["+", [20, 2]],
-    ["Caps", [0, 3]], ["A", [1, 3]], ["S", [2, 3]], ["D", [3, 3]], ["F", [4, 3]], ["G", [5, 3]], ["H", [6, 3]], ["J", [7, 3]], ["K", [8, 3]], ["L", [9, 3]], [";", [10, 3]], ["'", [11, 3]], ["Enter", [13, 3]], ["4", [17, 3]], ["5", [18, 3]], ["6", [19, 3]],
-    ["LShift", [0, 4]], ["Z", [2, 4]], ["X", [3, 4]], ["C", [4, 4]], ["V", [5, 4]], ["B", [6, 4]], ["N", [7, 4]], ["M", [8, 4]], [",", [9, 4]], [".", [10, 4]], ["/", [11, 4]], ["RShift", [13, 4]], ["Up", [15, 4]], ["1", [17, 4]], ["2", [18, 4]], ["3", [19, 4]], ["Enter", [20, 4]],
-    ["LCtrl", [0, 5]], ["LWin", [1, 5]], ["LAlt", [2, 5]], ["Space", [6, 5]], ["RAlt", [10, 5]], ["RWin", [11, 5]], ["Menu", [12, 5]], ["RCtrl", [13, 5]], ["Left", [14, 5]], ["Down", [15, 5]], ["Right", [16, 5]], ["0", [18, 5]], [".", [19, 5]],
-
-    // Боковая подсветка
-    ["L-Bar 1", [-1, 1]], ["L-Bar 2", [-1, 2]], ["L-Bar 3", [-1, 3]], ["L-Bar 4", [-1, 4]],
-    ["R-Bar 1", [21, 1]], ["R-Bar 2", [21, 2]], ["R-Bar 3", [21, 3]], ["R-Bar 4", [21, 4]]
-];
-
-export function LedNames() { return vKeys.map(k => k[0]); }
-export function LedPositions() { return vKeys.map(k => k[1]); }
+"Redragon K580 Vata": {
+				name: "Redragon K580 Vata",
+				image: "https://assets.signalrgb.com/devices/brands/redragon/keyboards/k580.png",
+				vLedNames: [
+					"Left strip 1",																																															"Right strip 1",
+					"Left strip 2",	"Esc",     "F1", "F2", "F3", "F4",   "F5", "F6", "F7", "F8",    "F9", "F10", "F11", "F12",		"Print Screen",	"Scroll Lock",	"Pause Break", 											"Right strip 2",
+					"Left strip 3",	"`", "1",  "2", "3", "4", "5",  "6", "7", "8", "9", "0",  "-",   "+",  "Backspace",				"Insert",		"Home",			"Page Up",		"NumLock", "Num /", "Num *", "Num -", 	"Right strip 3",
+					"Left strip 4",	"Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\",						"Del",			"End",			"Page Down",	"Num 7", "Num 8", "Num 9", "Num +", 	"Right strip 4",
+					"Left strip 5",	"CapsLock", "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", 			 "Enter",															"Num 4", "Num 5", "Num 6", 				"Right strip 5",
+					"Left strip 6",	"Left Shift", "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", 	  "Right Shift",							"Up Arrow",						"Num 1", "Num 2", "Num 3", "Num Enter", "Right strip 6",
+					"Left strip 7",	"Left Ctrl", "Left Win", "Left Alt", "Space", "Right Alt", "Fn", "Menu", "Right Ctrl",			"Left Arrow",	"Down Arrow",	"Right Arrow",	"Num 0",		  "Num .", 				"Right strip 7",
+					"Left strip 8",																																															"Right strip 8",
+				],
+				vLeds:  [
+					7, 																										127,
+					15,   0,      8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96,    104, 112, 120,							119,
+					23,   1,  9, 17, 25, 33, 41, 49, 57, 65, 73, 81, 89, 97, 105,   113, 121, 129,    128, 136, 137, 138,	111,
+					31,   2, 10, 18, 26, 34, 42, 50, 58, 66, 74, 82, 90, 98, 106,   114, 122, 130,    115, 123, 131, 139,	103,
+					39,   3, 11, 19, 27, 35, 43, 51, 59, 67, 75, 83, 91,     107,					  124, 132, 140,		95,
+					47,   4,     20, 28, 36, 44, 52, 60, 68, 76, 84, 92,	108,         116,		  109, 117, 125, 133,	87,
+					55,   5, 13, 21,                 29,           37, 45, 53, 61,    69, 77, 85,      93,      101,		79,
+					63,																										71,
+				],
+				vLedPositions: [
+					[0, 0],																																															[22, 0], //2
+					[0, 1], [1, 1],			[3, 1], [4, 1], [5, 1], [6, 1],	[7, 1], [8, 1], [9, 1], [10, 1], [11, 1], [12, 1], [13, 1], [14, 1],	[15, 1], [16, 1], [17, 1],										[22, 1], //23
+					[0, 2], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2], [6, 2], [7, 2], [8, 2], [9, 2], [10, 2], [11, 2], [12, 2], [13, 2], [14, 2],	[15, 2], [16, 2], [17, 2],	[18, 2], [19, 2], [20, 2], [21, 2], [22, 2], //24
+					[0, 3], [1, 3], [2, 3], [3, 3], [4, 3], [5, 3], [6, 3], [7, 3], [8, 3], [9, 3], [10, 3], [11, 3], [12, 3], [13, 3], [14, 3], 	[15, 3], [16, 3], [17, 3],	[18, 3], [19, 3], [20, 3], [21, 3], [22, 3], //24
+					[0, 4], [1, 4], [2, 4], [3, 4], [4, 4], [5, 4], [6, 4], [7, 4], [8, 4], [9, 4], [10, 4], [11, 4], [12, 4], 			[14, 4],								[18, 4], [19, 4], [20, 4],			[22, 4], //19
+					[0, 5], 		[2, 5], [3, 5], [4, 5], [5, 5], [6, 5], [7, 5], [8, 5], [9, 5], [10, 5], [11, 5], [12, 5], 			[14, 5],			 [16, 5],			[18, 5], [19, 5], [20, 5], [21, 5], [22, 5], //19
+					[0, 6], [1, 6], [2, 6], [3, 6],					[6, 6],									 [11, 6], [12, 6], [13, 6], [14, 6],	[15, 6], [16, 6], [17, 6], 	[18, 6],		  [20, 6],			[22, 7],
+					[0, 7],																																															[22, 7],
+				],
+				size: [24, 8],
+				endpoint: [{ "interface": 1, "usage": 0x0092, "usage_page": 0xFF1C, "collection": 0x0004 }]
+			},
+			"None": {
+				name: "EVision Device",
+				image: "https://assets.signalrgb.com/devices/default/misc/usb-drive-render.png",
+				layout:	"None",
+			}
