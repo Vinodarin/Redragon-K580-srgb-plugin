@@ -104,6 +104,12 @@ export class SINOWEALTH_Device_Protocol {
 		this.ledPositions = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedPositions;
 		this.ledIndices = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLeds;
 
+		const layout = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()];
+		if (!layout) {
+			this.log("error", `LED layout "${this.getLedLayout()}" not found!`);
+			return;
+		}
+
 		this.log("verbose", `LED count: ${this.ledIndices.length}`);
 
 		device.setName(this.getDeviceName());
@@ -141,11 +147,30 @@ export class SINOWEALTH_Device_Protocol {
 
 	// === Отправка RGB‑пакета ===
 	writeRGBPackage(data){
-		const packet = this.generateRGBPacket(data);
-
-		this.log("verbose", `Sending RGB packet (${packet.length} bytes)`);
+		if (!data || data.length === 0) {
+			this.log("error", "writeRGBPackage() received empty data!");
+			return;
+		}
 		
-		device.send_report(packet, 520);
+		if (data.length < this.ledIndices.length * 3) {
+			this.log("warn", `RGB data too short (${data.length}), padding.`);
+			while (data.length < this.ledIndices.length * 3) data.push(0);
+		}
+
+		if (data.length > this.ledIndices.length * 3) {
+			this.log("warn", `RGB data too long (${data.length}), trimming.`);
+			data = data.slice(0, this.ledIndices.length * 3);
+		}
+
+		const packet = this.generateRGBPacket(data);
+		this.log("verbose", `Sending RGB packet (${packet.length} bytes)`);
+
+		try {
+			device.send_report(packet, 520);
+		} catch (e) {
+			this.log("error", `send_report() failed: ${e}`);
+		}
+		
 		device.pause(1);
 	}
 
@@ -155,6 +180,11 @@ export class SINOWEALTH_Device_Protocol {
 
 		this.log("verbose", "Rendering frame...");
 
+		if (!this.ledIndices || this.ledIndices.length === 0) {
+			this.log("error", "sendColors() aborted: LED index map is empty.");
+			return;
+		}
+
 		const pos = this.ledPositions;
 		const idx = this.ledIndices;
 
@@ -162,7 +192,12 @@ export class SINOWEALTH_Device_Protocol {
 
 		for (let i = 0; i < idx.length; i++) {
 			const [x, y] = pos[i];
-			const color = this.getPixelColor(x, y, overrideColor);
+			let color = this.getPixelColor(x, y, overrideColor);
+
+			if (!color || color.length !== 3) {
+				this.log("warn", `Invalid color at LED ${i}, using fallback [0,0,0]`);
+				color = [0, 0, 0];
+			}
 			
 			RGBData[idx[i] * 3]   = color[0];
 			RGBData[idx[i] * 3 + 1] = color[1];
@@ -182,12 +217,24 @@ export class SINOWEALTH_Device_Protocol {
 		const firmwareData = device.get_report(packet, 520);
 
 		if (!firmwareData) {
-			this.log("error", "Firmware response is empty!");
-		} else {
-			this.log("verbose", `Firmware response length: ${firmwareData.length}`);
+			this.log("error", "Firmware response is empty! Using fallback ModelID = 69");
+			return 69;
+		}
+		
+		if (firmwareData.length < 15) {
+			this.log("warn", `Firmware response too short (${firmwareData.length} bytes). Using fallback ModelID = 69`);
+			return 69;
 		}
 
-		return firmwareData[13] ?? firmwareData[12] ?? firmwareData[14];
+		const id = firmwareData[13] ?? firmwareData[12] ?? firmwareData[14];
+
+		if (!id || id === 0) {
+			this.log("warn", `Firmware returned invalid ModelID (${id}). Using fallback ModelID = 69`);
+			return 69;
+		}
+
+		this.log("verbose", `Firmware ModelID resolved: ${id}`);
+		return id;
 	}
 }
 
