@@ -72,15 +72,6 @@ export class SINOWEALTH_Device_Protocol {
 	getLedLayout() { return this.Config.layout; }
 	setLedLayout(layout) { this.Config.layout = layout; }
 
-	getLedNames() { return this.Config.LedNames; }
-	setLedNames(ledNames) { this.Config.LedNames = ledNames; }
-
-	getLedPositions() { return this.Config.LedPositions; }
-	setLedPositions(ledPositions) { this.Config.LedPositions = ledPositions; }
-
-	getLeds() { return this.Config.Leds; }
-	setLeds(leds) { this.Config.Leds = leds; }
-
 	getDeviceImage(deviceModel) {
 		return SINOWEALTHdeviceLibrary.LEDLibrary[deviceModel].image;
 	}
@@ -111,9 +102,6 @@ export class SINOWEALTH_Device_Protocol {
 		device.setSize(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].size);
 		device.setControllableLeds(this.ledNames, this.ledPositions);
 		device.setImageFromUrl(this.getDeviceImage(modelID));
-	}
-	getDeviceImage(deviceModel) {
-		return SINOWEALTHdeviceLibrary.LEDLibrary[deviceModel].image;
 	}
 
 	// === Цвет пикселя ===
@@ -146,11 +134,11 @@ export class SINOWEALTH_Device_Protocol {
 
 		for (let i = 0; i < idx.length; i++) {
 			const [x, y] = pos[i];
-			onst color = this.getPixelColor(x, y, overrideColor);
+			const color = this.getPixelColor(x, y, overrideColor);
 			
-			RGBData[(deviceLeds[iIdx]*3)]   = color[0];
-			RGBData[(deviceLeds[iIdx]*3)+1] = color[1];
-			RGBData[(deviceLeds[iIdx]*3)+2] = color[2];
+			RGBData[idx[i] * 3]   = color[0];
+			RGBData[idx[i] * 3 + 1] = color[1];
+			RGBData[idx[i] * 3 + 2] = color[2];
 		}
 		
 		this.writeRGBPackage(RGBData);
