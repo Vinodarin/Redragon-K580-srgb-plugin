@@ -25,6 +25,7 @@ export function ControllableParameters(){
 		{property:"shutdownColor", group:"lighting", label:"Shutdown Color", type:"color", default:"#000000"},
 		{property:"LightingMode", group:"lighting", label:"Lighting Mode", type:"combobox", values:["Canvas", "Forced"], default:"Canvas"},
 		{property:"forcedColor", group:"lighting", label:"Forced Color", type:"color", default:"#009bde"},
+		{property:"LoggingLevel", group:"settigs", label:"Logging Level", type:"combobox", values:["None", "Basic", "Verbose"], default:"Basic"},
 	];
 }
 
@@ -77,17 +78,22 @@ export class SINOWEALTH_Device_Protocol {
 	}
 
 	Initialize() {
+		this.log("info", "Initializing device...");
+		
 		this.setDeviceProductId(device.productId());
+		this.log("verbose", `ProductID: ${this.getDeviceProductId()}`);
 
 		const modelID = this.fetchFirmwareData();
+		this.log("info", `ModelID read from firmware: ${modelID}`);
 		
 		// ЖЁСТКАЯ ПРОВЕРКА MODELID
 		if (modelID !== 69) {
-			device.log(`❌ Wrong ModelID (${modelID}), expected 69. Skipping device.`);
+			this.log("error", `Wrong ModelID (${modelID}), expected 69`);
 			return;
 		}
 
 		const DeviceProperties = this.getDeviceProperties(modelID);
+		this.log("info", `Device recognized: ${DeviceProperties.name}`);
 
 		this.setModelID(modelID);
 		this.setDeviceName(DeviceProperties.name);
@@ -98,10 +104,26 @@ export class SINOWEALTH_Device_Protocol {
 		this.ledPositions = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedPositions;
 		this.ledIndices = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLeds;
 
+		this.log("verbose", `LED count: ${this.ledIndices.length}`);
+
 		device.setName(this.getDeviceName());
 		device.setSize(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].size);
 		device.setControllableLeds(this.ledNames, this.ledPositions);
 		device.setImageFromUrl(this.getDeviceImage(modelID));
+
+		this.log("info", "Initialization complete.");
+	}
+	// === ЛОГИРОВАНИЕ ===
+	log(level, message) {
+		if (LoggingLevel === "None") return;
+
+		if (LoggingLevel === "Basic" && level === "verbose") return;
+
+		onst tag = level === "error"   ? "❌ ERROR" :
+				   level === "warn"    ? "⚠️ WARN" :
+				   level === "verbose" ? "🔍 VERBOSE" :
+										 "ℹ️ INFO";
+		device.log(`${tag}: ${message}`);
 	}
 
 	// === Цвет пикселя ===
@@ -113,12 +135,16 @@ export class SINOWEALTH_Device_Protocol {
 
 	// === Генерация RGB‑пакета ===
 	generateRGBPacket(data) {
+		this.log("verbose", `Generating RGB packet, data length=${data.length}`);
 		return [0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01, ...data];
 	}
 
 	// === Отправка RGB‑пакета ===
 	writeRGBPackage(data){
 		const packet = this.generateRGBPacket(data);
+
+		this.log("verbose", `Sending RGB packet (${packet.length} bytes)`);
+		
 		device.send_report(packet, 520);
 		device.pause(1);
 	}
@@ -126,6 +152,8 @@ export class SINOWEALTH_Device_Protocol {
 	// === Основной рендер ===
 	sendColors(overrideColor) {
 		if (!this.getModelID()) return;
+
+		this.log("verbose", "Rendering frame...");
 
 		const pos = this.ledPositions;
 		const idx = this.ledIndices;
@@ -146,11 +174,18 @@ export class SINOWEALTH_Device_Protocol {
 
 	// === Получение ModelID ===
 	fetchFirmwareData() {
+		this.log("verbose", "Requesting firmware data...");
+		
 		const packet = [0x06, 0x82, 0x01, 0x00, 0x01, 0x00, 0x06];
-
 		device.send_report(packet, 520);
 
 		const firmwareData = device.get_report(packet, 520);
+
+		if (!firmwareData) {
+			this.log("error", "Firmware response is empty!");
+		} else {
+			this.log("verbose", `Firmware response length: ${firmwareData.length}`);
+		}
 
 		return firmwareData[13] ?? firmwareData[12] ?? firmwareData[14];
 	}
