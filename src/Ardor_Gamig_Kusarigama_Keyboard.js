@@ -89,6 +89,7 @@ export class SINOWEALTH_Device_Protocol {
 		this.setDeviceProductId(device.productId());
 
 		const modelID = this.fetchFirmwareData();
+		
 		// ЖЁСТКАЯ ПРОВЕРКА MODELID
 		if (modelID !== 69) {
 			device.log(`❌ Wrong ModelID (${modelID}), expected 69. Skipping device.`);
@@ -97,65 +98,65 @@ export class SINOWEALTH_Device_Protocol {
 
 		const DeviceProperties = this.getDeviceProperties(modelID);
 
-		if(DeviceProperties){
-			this.setModelID(modelID);
-			this.setDeviceName(DeviceProperties.name);
-			this.setLedLayout(DeviceProperties.layout);
-			this.setLedNames(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedNames);
-			this.setLedPositions(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedPositions);
-			this.setLeds(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLeds);
+		this.setModelID(modelID);
+		this.setDeviceName(DeviceProperties.name);
+		this.setLedLayout(DeviceProperties.layout);
 
-			device.log(`Device model found: ${this.getDeviceName()}`);
-			device.setName(this.getDeviceName());
-			device.setSize(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].size);
-			device.setControllableLeds(this.getLedNames(), this.getLedPositions());
-			device.setImageFromUrl(this.getDeviceImage(modelID));
-		}else{
-			device.notify("Unknown device", `Model ID: ${modelID}`, 1);
-			console.log("Model not found in library!");
-			console.log("Unknown protocol for "+ modelID);
-		}
+		// Кешируем LED‑данные
+		this.ledNames = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedNames;
+		this.ledPositions = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedPositions;
+		this.ledIndices = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLeds;
+
+		device.setName(this.getDeviceName());
+		device.setSize(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].size);
+		device.setControllableLeds(this.ledNames, this.ledPositions);
+		device.setImageFromUrl(this.getDeviceImage(modelID));
+	}
+	getDeviceImage(deviceModel) {
+		return SINOWEALTHdeviceLibrary.LEDLibrary[deviceModel].image;
 	}
 
-	sendColors(overrideColor) {
-		if(!this.getModelID()){
-			return;
-		}
-
-		const deviceLedPositions = this.getLedPositions();
-		const deviceLeds = this.getLeds();
-		const RGBData = [];
-
-		for (let iIdx = 0; iIdx < deviceLeds.length; iIdx++) {
-			const iPxX = deviceLedPositions[iIdx][0];
-			const iPxY = deviceLedPositions[iIdx][1];
-
-			let color;
-
-			if(overrideColor){
-				color = hexToRgb(overrideColor);
-			}else if (LightingMode === "Forced") {
-				color = hexToRgb(forcedColor);
-			}else{
-				color = device.color(iPxX, iPxY);
-			}
-
-			RGBData[(deviceLeds[iIdx]*3)]   = color[0];
-			RGBData[(deviceLeds[iIdx]*3)+1] = color[1];
-			RGBData[(deviceLeds[iIdx]*3)+2] = color[2];
-		}
-
-		this.writeRGBPackage(RGBData);
+	// === Цвет пикселя ===
+	getPixelColor(x, y, overrideColor) {
+    	if (overrideColor) return hexToRgb(overrideColor);
+    	if (LightingMode === "Forced") return hexToRgb(forcedColor);
+    	return device.color(x, y);
 	}
 
+	// === Генерация RGB‑пакета ===
+	generateRGBPacket(data) {
+		return [0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01, ...data];
+	}
+
+	// === Отправка RGB‑пакета ===
 	writeRGBPackage(data){
-		let packet = [0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01];
-		packet = packet.concat(data);
-
+		const packet = this.generateRGBPacket(data);
 		device.send_report(packet, 520);
 		device.pause(1);
 	}
 
+	// === Основной рендер ===
+	sendColors(overrideColor) {
+		if (!this.getModelID()) return;
+
+		const pos = this.ledPositions;
+		const idx = this.ledIndices;
+
+		const RGBData = [];
+
+		for (let i = 0; i < idx.length; i++) {
+			const [x, y] = pos[i];
+			onst color = this.getPixelColor(x, y, overrideColor);
+			
+			RGBData[(deviceLeds[iIdx]*3)]   = color[0];
+			RGBData[(deviceLeds[iIdx]*3)+1] = color[1];
+			RGBData[(deviceLeds[iIdx]*3)+2] = color[2];
+		}
+		
+		this.writeRGBPackage(RGBData);
+	}
+
+	// === Получение ModelID ===
 	fetchFirmwareData() {
 		const packet = [0x06, 0x82, 0x01, 0x00, 0x01, 0x00, 0x06];
 
