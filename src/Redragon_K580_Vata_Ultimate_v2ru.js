@@ -35,11 +35,11 @@ export function ControllableParameters(){
 		{property:"monochrome", group:"lighting", label:"Монохромный режим", type:"boolean", default:false},
 		{property:"monochromeMode", group:"lighting", label:"Метод яркости монохрома", type:"combobox", values:["Max", "Average", "Luma"], default:"Max"}, // новый параметр - "Max" - берётся максимальное значение из R, G, B "Average" - берётся среднее арифметическое "Luma" - берётся яркость по формуле восприятия (учитывает, что глаз сильнее реагирует на зелёный)
 		// новые параметры в отдельной группе "settings"
-		{property:"packetSize", group:"settings", label:"Размер пакета (bit)", type:"combobox", values:[24, 33, 42, 32, 48, 56], default:48}, // новый параметр изменяет размер пакета bit
-		{property:"packetPause", group:"settings", label:"Пауза между пакетами (мс)", type:"combobox", values:[1, 2, 3, 5, 8, 10, 15], default:3}, // новый параметр изменяет паузу при отправке пакетов
-		{property:"useChecksum", group:"settings", label:"Использовать контрольную сумму", type:"boolean", default:true}, // новый параметр вкл.откл проверку useChecksum
-		{property:"fps", group:"settings", label:"FPS (кадров в секунду)", type:"combobox", values:[15, 30, 45, 60], default:30}, // Частота обновления
-        {property:"logLevel", group:"settings", label:"Уровень логов", type:"combobox", values:["None","Basic","Verbose"], default:"Basic"} // Гибкая настройка логов
+		{property:"packetSize", group:"settings", label:"📦 Размер пакета (bit)", type:"combobox", values:[24, 33, 42, 32, 48, 56], default:48}, // новый параметр изменяет размер пакета bit
+		{property:"packetPause", group:"settings", label:"⏱️ Пауза между пакетами (мс)", type:"combobox", values:[1, 2, 3, 5, 8, 10, 15], default:3}, // новый параметр изменяет паузу при отправке пакетов
+		{property:"useChecksum", group:"settings", label:"🔒 Использовать контрольную сумму", type:"boolean", default:true}, // новый параметр вкл.откл проверку useChecksum
+		{property:"fps", group:"settings", label:"🎞️ FPS (кадров в секунду)", type:"combobox", values:[15, 30, 45, 60], default:30}, // Частота обновления
+        {property:"logLevel", group:"settings", label:"📋 Уровень логов", type:"combobox", values:["None","Basic","Verbose"], default:"Basic"} // Гибкая настройка логов
 	];
 }
 
@@ -47,8 +47,9 @@ export function Initialize() { EVISION.Initialize(); }
 export function Render() {
 	EVISION.sendColors();
 	if (!EVISION.renderNotified) {
-		device.notify("✅ Подсветка активна", "Клавиатура успешно управляется через SignalRGB.", 1);
+		device.notify("✨ Подсветка активна", "Клавиатура успешно управляется через SignalRGB.", 1);
 		EVISION.renderNotified = true;
+		device.log("✨ Подсветка активна");
 	}
 }
 export function Shutdown(SystemSuspending) {
@@ -121,7 +122,7 @@ export class EVISION_Device_Protocol {
 			device.write([0x04, 0x8c, 0x00, 0x0b, 0x30, 0x50, 0x01], 64);
 			device.pause(50);
 		} catch (err) {
-			console.error("Error setting software mode:", err);
+			console.error("❌ Error setting software mode:", err);
 			device.notify("❌ Ошибка подключения", "Не удалось перевести устройство в программный режим. Проверьте кабель или драйвер.", 2);
 		}
 	}
@@ -140,9 +141,10 @@ export class EVISION_Device_Protocol {
 			this.setDeviceProductId(device.productId());
 			const deviceHID = device.getDeviceInfo();
 			const modelID = forcedModel === "None" ? deviceHID.product : forcedModel;
+			console.log("⚡ Initializing HID...");
 			this.updateModel(modelID);
 		} catch (err) {
-			console.error("Error during initialization:", err);
+			console.error("❌ Error during initialization:", err);
 			device.notify("❌ Ошибка инициализации", "Не удалось инициализировать устройство. Попробуйте переподключить клавиатуру.", 3);
 		}
 	}
@@ -226,10 +228,10 @@ export class EVISION_Device_Protocol {
 			console.log(`⚙️ Packet Size изменён: ${this.prevPacketSize} → ${bytesToSend}`);
 		}
 		if (pauseTime !== this.prevPauseTime) {
-			console.log(`⚙️ Packet Pause изменён: ${this.prevPauseTime} → ${pauseTime}`);
+			console.log(`️⏱️ Packet Pause изменён: ${this.prevPauseTime} → ${pauseTime}`);
 		}
 		if (useChecksum !== this.prevUseChecksum) {
-			console.log(`⚙️ UseChecksum изменён: ${this.prevUseChecksum} → ${useChecksum}`);
+			console.log(`🔒️ UseChecksum изменён: ${this.prevUseChecksum} → ${useChecksum}`);
 		}
 		if (this.LOGLEVEL !== "None") {
             console.log(`📦 Packet Size=${bytesToSend}, Pause=${pauseTime}, UseChecksum=${useChecksum}, TotalPackets=${TotalPackets}`);
@@ -314,7 +316,7 @@ export class EVISION_Device_Protocol {
 			result = this.getHighLow(packetSum + (index * bytesToSend) + 74);
 		}
 		if (this.LOGLEVEL !== "None" && !this.checksumInfoPrinted) {
-			console.log(`Checksum calc | index=${index}, sum=${packetSum}, result.low=${result.low}, result.high=${result.high}`);
+			console.log(`🔑 Checksum calc | index=${index}, sum=${packetSum}, result.low=${result.low}, result.high=${result.high}`);
 			this.checksumInfoPrinted = true;
 		}
 		return result;
@@ -330,8 +332,8 @@ export class EVISION_Device_Protocol {
 	updateModel(modelID) {
 		if (modelID === "None") {
 			this.setLedLayout("None");
-			device.notify("❌ Подсветка отключена", "Режим 'None' выбран — управление подсветкой выключено.", 1);
-			device.log("❌ Lighting disabled due to 'None' mode.");
+			device.notify("🌑 Подсветка отключена", "Режим 'None' выбран — управление подсветкой выключено.", 1);
+			device.log("🌑 Lighting disabled due to 'None' mode.");
 			return;
 		}
 
@@ -343,6 +345,7 @@ export class EVISION_Device_Protocol {
 
 			device.log(`✅ Device model found: ${this.getDeviceName()}`);
 			device.setName(this.getDeviceName());
+			console.log("🖼️ Loading Image...");
 			device.setImageFromUrl(DeviceProperties.image);
 
 			this.setLedNames(DeviceProperties.vLedNames);
@@ -352,10 +355,12 @@ export class EVISION_Device_Protocol {
 			this.detectDeviceEndpoint(DeviceProperties);
 
 			device.setSize(DeviceProperties.size);
+			console.log(`💡 Created Leds: ${DeviceProperties.vLeds.length}`);
+			console.log(`🎨 Loaded Led color overrides, count: 0`);
 			device.setControllableLeds(this.getLedNames(), this.getLedPositions());
 
-			device.notify("Устройство готово", "Redragon K580 Vata успешно инициализировано.", 1);
-			device.log("Initialization complete for Redragon K580 Vata.");
+			device.notify("✅ Устройство готово", "Redragon K580 Vata успешно инициализировано.", 1);
+			device.log("🚀 Initialization complete for Redragon K580 Vata.");
 		} else {
 			device.notify("Ошибка", "Не удалось загрузить свойства для Redragon K580 Vata.", 3);
 			device.log("❌ Model not found in library!");
@@ -364,7 +369,7 @@ export class EVISION_Device_Protocol {
 	
 	detectDeviceEndpoint(deviceLibrary) {
 
-		console.log("Searching for endpoints...");
+		console.log("🔍 Searching for endpoints...");
 
 		const deviceEndpoints = device.getHidEndpoints();
 
@@ -388,14 +393,14 @@ export class EVISION_Device_Protocol {
 						currentEndpoint.collection,
 					);
 
-					console.log("Endpoint " + JSON.stringify(currentEndpoint) + " found!");
+					console.log("🔌 Endpoint " + JSON.stringify(currentEndpoint) + " found!");
 					device.notify("✅ Эндпоинт найден", "Устройство успешно подключено и готово к работе.", 1)
 					return;
 				}
 			}
 		}
 
-		console.log(`Endpoints not found in the device! - ${JSON.stringify(deviceLibrary.endpoint)}`);
+		console.log(`❌ Endpoints not found in the device! - ${JSON.stringify(deviceLibrary.endpoint)}`);
 		device.notify("❌ Эндпоинт не найден", "Не удалось найти HID-эндпоинт для устройства. Проверьте драйвер или кабель.", 2);
 		device.log("❌ Endpoint search failed");
 	}
