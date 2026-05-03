@@ -25,7 +25,7 @@ export function ControllableParameters(){
 		{property:"shutdownColor", group:"lighting", label:"Shutdown Color", type:"color", default:"#000000"},
 		{property:"LightingMode", group:"lighting", label:"Lighting Mode", type:"combobox", values:["Canvas", "Forced"], default:"Canvas"},
 		{property:"forcedColor", group:"lighting", label:"Forced Color", type:"color", default:"#009bde"},
-		{property:"LoggingLevel", group:"settigs", label:"Logging Level", type:"combobox", values:["None", "Basic", "Verbose"], default:"Basic"},
+		{property:"LoggingLevel", group:"settings", label:"Logging Level", type:"combobox", values:["None", "Basic", "Verbose"], default:"Basic"},
 	];
 }
 
@@ -119,10 +119,10 @@ export class SINOWEALTH_Device_Protocol {
 
 		if (LoggingLevel === "Basic" && level === "verbose") return;
 
-		onst tag = level === "error"   ? "❌ ERROR" :
-				   level === "warn"    ? "⚠️ WARN" :
-				   level === "verbose" ? "🔍 VERBOSE" :
-										 "ℹ️ INFO";
+		const tag = level === "error"   ? "❌ ERROR" :
+					level === "warn"    ? "⚠️ WARN" :
+					level === "verbose" ? "🔍 VERBOSE" :
+										  "ℹ️ INFO";
 		device.log(`${tag}: ${message}`);
 	}
 
