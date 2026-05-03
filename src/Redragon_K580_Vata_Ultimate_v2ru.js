@@ -355,8 +355,6 @@ export class EVISION_Device_Protocol {
 			this.detectDeviceEndpoint(DeviceProperties);
 
 			device.setSize(DeviceProperties.size);
-			console.log(`💡 Created Leds: ${DeviceProperties.vLeds.length}`);
-			console.log(`🎨 Loaded Led color overrides, count: 0`);
 			device.setControllableLeds(this.getLedNames(), this.getLedPositions());
 
 			device.notify("✅ Устройство готово", "Redragon K580 Vata успешно инициализировано.", 1);
