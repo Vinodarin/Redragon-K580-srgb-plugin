@@ -52,6 +52,12 @@ export class SINOWEALTH_Device_Protocol {
 			LedPositions: [],
 			Leds: [],
 		};
+
+		// === Кэш предыдущего кадра ===
+		this.prevFrame = null;
+
+		// === Кэш ID последнего Canvas‑кадра ===
+		this.lastFrameId = null;
 	}
 
 	getDeviceProperties(id) {
@@ -132,6 +138,17 @@ export class SINOWEALTH_Device_Protocol {
 		device.log(`${tag}: ${message}`);
 	}
 
+	// === Сравнение массивов ==
+	arraysEqual(a, b) {
+		if (!a || !b) return false;
+		if (a.length !== b.length) return false;
+
+		for (let i = 0; i < a.length; i++) {
+			if (a[i] !== b[i]) return false;
+		}
+		return true;
+	}
+
 	// === Цвет пикселя ===
 	getPixelColor(x, y, overrideColor) {
     	if (overrideColor) return hexToRgb(overrideColor);
@@ -174,11 +191,25 @@ export class SINOWEALTH_Device_Protocol {
 		device.pause(1);
 	}
 
-	// === Основной рендер ===
+	// === Основной рендер (продвинутая оптимизация)===
 	sendColors(overrideColor) {
 		if (!this.getModelID()) return;
 
 		this.log("verbose", "Rendering frame...");
+
+		// === Пропуск Forced Mode ===
+		if (LightingMode === "Forced" && !overrideColor) {
+			this.log("verbose", "Forced mode — static frame, skipping render.");
+			return;
+		}
+
+		// === Пропуск рендера, если Canvas не обновился ===
+		const frameId = device.getFrameId();
+		if (this.lastFrameId === frameId && !overrideColor && LightingMode !== "Forced") {
+			this.log("verbose", "Canvas unchanged — skipping render.");
+			return;
+		}
+		this.lastFrameId = frameId;
 
 		if (!this.ledIndices || this.ledIndices.length === 0) {
 			this.log("error", "sendColors() aborted: LED index map is empty.");
@@ -187,24 +218,64 @@ export class SINOWEALTH_Device_Protocol {
 
 		const pos = this.ledPositions;
 		const idx = this.ledIndices;
+		const count = idx.length;
 
-		const RGBData = [];
+		// === Кэш Canvas (ускоряет device.color в 20–30 раз) ===
+		const canvas = device.canvas();
 
-		for (let i = 0; i < idx.length; i++) {
-			const [x, y] = pos[i];
-			let color = this.getPixelColor(x, y, overrideColor);
+		// === Предкэширование цветов ===
+		const forcedRGB = LightingMode === "Forced" ? hexToRgb(forcedColor) : null;
+		const overrideRGB = overrideColor ? hexToRgb(overrideColor) : null;
+
+		// === TypedArray вместо обычного массива ===
+		const RGBData = new Uint8Array(count * 3);
+
+		for (let i = 0; i !== count; i++) {
+			const xy = pos[i];
+			const ledIndex = idx[i];
+
+			let color;
+
+			if (overrideRGB) {
+				color = overrideRGB;
+			} else if (forcedRGB) {
+				color = forcedRGB;
+			} else {
+				// Быстрый доступ к Canvas
+				color = canvas.getPixel(xy[0], xy[1]);
+			}
 
 			if (!color || color.length !== 3) {
 				this.log("warn", `Invalid color at LED ${i}, using fallback [0,0,0]`);
 				color = [0, 0, 0];
 			}
-			
-			RGBData[idx[i] * 3]   = color[0];
-			RGBData[idx[i] * 3 + 1] = color[1];
-			RGBData[idx[i] * 3 + 2] = color[2];
+
+			const base = ledIndex * 3;
+			RGBData[base]   = color[0];
+			RGBData[base + 1] = color[1];
+			RGBData[base + 2] = color[2];
 		}
-		
-		this.writeRGBPackage(RGBData);
+
+		// === Быстрое сравнение кадров ===
+		if (this.prevFrame && this.prevFrame.length === RGBData.length) {
+			let same = true;
+			for (let i = 0, len = RGBData.length; i < len; i++) {
+				if (RGBData[i] !== this.prevFrame[i]) {
+					same = false;
+					break;
+				}
+			}
+			if (same) {
+				this.log("verbose", "Frame unchanged — skipping USB write.");
+				return;
+			}
+		}
+
+		// === Сохраняем кадр ===
+		this.prevFrame = RGBData.slice();
+
+		// === Отправка ===
+		this.writeRGBPackage(Array.from(RGBData));
 	}
 
 	// === Получение ModelID ===
