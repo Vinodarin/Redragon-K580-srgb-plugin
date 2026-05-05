@@ -179,6 +179,12 @@ export class SINOWEALTH_Device_Protocol {
 
 		const mode = device.getProperty("LightingMode");
 
+		// === Сброс forcedSent при смене режима ===
+		if (mode !== this.lastMode) {
+			this.forcedSent = false;
+			this.lastMode = mode;
+		}
+
 		// Forced Mode — отправляем один раз
 		if (mode === "Forced" && !overrideColor) {
 			if (this.forcedSent) return;
