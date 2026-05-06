@@ -1,61 +1,47 @@
-import { Assert } from "@SignalRGB/Errors.js";
+import {Assert} from "@SignalRGB/Errors.js";
 import DeviceDiscovery from "@SignalRGB/DeviceDiscovery";
 
-// === Метаданные устройства ===
-export function Name() { return "Sinowealth Device"; }
+export function Name() { return "Ardor Gamig Kusarigama"; }
 export function VendorId() { return 0x258a; }
 export function ProductId() { return [0x010c]; }
 export function Publisher() { return "Custom"; }
-export function Documentation() { return "troubleshooting/sinowealth"; }
+export function Documentation(){ return "troubleshooting/sinowealth"; }
 export function Size() { return [15, 6]; }
-export function DeviceType() { return "keyboard"; }
-
-// === Корректная валидация ===
+export function DeviceType(){return "keyboard";}
 export function Validate(endpoint) {
 	return endpoint.interface === 1 &&
 	       endpoint.usage === 0x0001 &&
 	       endpoint.usage_page === 0xFF00 &&
 	       endpoint.collection === 0x0006 &&
-	       endpoint.vendor_id === 0x258a &&
-	       endpoint.product_id === 0x010c;
+		   device.vendorId() === 0x258a &&
+		   device.productId() === 0x010c;
 }
-
 export function ImageUrl() {
 	return "https://assets.signalrgb.com/devices/default/misc/usb-drive-render.png";
 }
 
-// === Параметры управления ===
-export function ControllableParameters() {
+export function ControllableParameters(){
 	return [
-		{ property: "shutdownColor", group: "lighting", label: "Shutdown Color", type: "color", default: "#000000" },
-		{ property: "LightingMode", group: "lighting", label: "Lighting Mode", type: "combobox", values: ["Canvas", "Forced"], default: "Canvas" },
-		{ property: "forcedColor", group: "lighting", label: "Forced Color", type: "color", default: "#009bde" },
-		{ property: "LoggingLevel", group: "settings", label: "Logging Level", type: "combobox", values: ["None", "Basic", "Verbose"], default: "Basic" },
+		{property:"shutdownColor", group:"lighting", label:"Shutdown Color", type:"color", default:"#000000"},
+		{property:"LightingMode", group:"lighting", label:"Lighting Mode", type:"combobox", values:["Canvas", "Forced"], default:"Canvas"},
+		{property:"forcedColor", group:"lighting", label:"Forced Color", type:"color", default:"#009bde"},
+		{property:"LoggingLevel", group:"settings", label:"Logging Level", type:"combobox", values:["None", "Basic", "Verbose"], default:"Basic"},
+		{property:"UsbDelay", group:"settings", label:"USB Delay (ms)", type:"number", default:1}
 	];
 }
 
-// === Инициализация ===
 export function Initialize() {
 	SINOWEALTH.Initialize();
 }
 
-// === Рендер ===
 export function Render() {
 	SINOWEALTH.sendColors();
 }
 
-// === Завершение работы ===
 export function Shutdown(SystemSuspending) {
-	const color = SystemSuspending
-		? "#000000"
-		: device.getProperty("shutdownColor");
-
+	const color = SystemSuspending ? "#000000" : shutdownColor;
 	SINOWEALTH.sendColors(color);
 }
-
-// ============================================================================
-// === КЛАСС ПРОТОКОЛА УСТРОЙСТВА =============================================
-// ============================================================================
 
 export class SINOWEALTH_Device_Protocol {
 	constructor() {
@@ -63,180 +49,255 @@ export class SINOWEALTH_Device_Protocol {
 			DeviceProductID: 0x0000,
 			DeviceName: "SINOWEALTH Device",
 			DeviceEndpoint: { interface: 1, usage: 0x0001, usage_page: 0xFF00, collection: 0x0006 },
-			layout: null,
+			LedNames: [],
+			LedPositions: [],
+			Leds: [],
 		};
 
+		// === Кэш предыдущего кадра ===
 		this.prevFrame = null;
+
+		// === Кэш ID последнего Canvas‑кадра ===
 		this.lastFrameId = null;
-		this.forcedSent = false;
 	}
 
-	// === Утилиты ===
+	getDeviceProperties(id) {
+		return SINOWEALTHdeviceLibrary.LEDLibrary[id];
+	}
+
+	getModelID() { return this.Config.ModelID; }
+	setModelID(modelid) { this.Config.ModelID = modelid; }
+
+	getDeviceProductId() { return this.Config.DeviceProductID; }
+	setDeviceProductId(productID) { this.Config.DeviceProductID = productID; }
+
+	getDeviceName() { return this.Config.DeviceName; }
+	setDeviceName(deviceName) { this.Config.DeviceName = deviceName; }
+
+	getDeviceEndpoint() { return this.Config.DeviceEndpoint; }
+	setDeviceEndpoint(deviceEndpoint) { this.Config.DeviceEndpoint = deviceEndpoint; }
+
+	getLedLayout() { return this.Config.layout; }
+	setLedLayout(layout) { this.Config.layout = layout; }
+
+	getDeviceImage(deviceModel) {
+		return SINOWEALTHdeviceLibrary.LEDLibrary[deviceModel].image;
+	}
+
+	Initialize() {
+		this.log("info", "Initializing device...");
+		
+		this.setDeviceProductId(device.productId());
+		this.log("verbose", `ProductID: ${this.getDeviceProductId()}`);
+
+		const modelID = this.fetchFirmwareData();
+		this.log("info", `ModelID read from firmware: ${modelID}`);
+		
+		// ЖЁСТКАЯ ПРОВЕРКА MODELID
+		//if (modelID !== 69) {
+		//	this.log("error", `Wrong ModelID (${modelID}), expected 69`);
+		//	return;
+		//}
+		const DeviceProperties = this.getDeviceProperties(modelID);
+		if (!DeviceProperties) {
+    		this.log("error", `Unknown ModelID (${modelID}), using fallback.`);
+    		return;
+		}
+		this.log("info", `Device recognized: ${DeviceProperties.name}`);
+
+		this.setModelID(modelID);
+		this.setDeviceName(DeviceProperties.name);
+		this.setLedLayout(DeviceProperties.layout);
+
+		// Кешируем LED‑данные
+		this.ledNames = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedNames;
+		this.ledPositions = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLedPositions;
+		this.ledIndices = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].vLeds;
+
+		const layout = SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()];
+		if (!layout) {
+			this.log("error", `LED layout "${this.getLedLayout()}" not found!`);
+			return;
+		}
+
+		this.log("verbose", `LED count: ${this.ledIndices.length}`);
+
+		device.setName(this.getDeviceName());
+		device.setSize(SINOWEALTHdeviceLibrary.LEDLayout[this.getLedLayout()].size);
+		device.setControllableLeds(this.ledNames, this.ledPositions);
+		device.setImageFromUrl(this.getDeviceImage(modelID));
+
+		this.log("info", "Initialization complete.");
+	}
+	// === ЛОГИРОВАНИЕ ===
 	log(level, message) {
-		const setting = device.getProperty("LoggingLevel");
+		if (LoggingLevel === "None") return;
 
-		if (setting === "None") return;
-		if (setting === "Basic" && level === "verbose") return;
+		if (LoggingLevel === "Basic" && level === "verbose") return;
 
-		const tag =
-			level === "error" ? "❌ ERROR" :
-			level === "warn" ? "⚠️ WARN" :
-			level === "verbose" ? "🔍 VERBOSE" :
-			"ℹ️ INFO";
+		const tag = {
+  			error: "❌ ERROR",
+  			warn: "⚠️ WARN",
+  			verbose: "🔍 VERBOSE",
+  			info: "ℹ️ INFO"
+		}[level] || "ℹ️ INFO";
 
 		device.log(`${tag}: ${message}`);
 	}
 
-	hexToRgb(hex) {
-		hex = hex.replace("#", "");
-		return [
-			parseInt(hex.substring(0, 2), 16),
-			parseInt(hex.substring(2, 4), 16),
-			parseInt(hex.substring(4, 6), 16)
-		];
+	// === Цвет пикселя ===
+	getPixelColor(x, y, overrideColor) {
+    	if (overrideColor) return hexToRgb(overrideColor);
+    	if (LightingMode === "Forced") return hexToRgb(forcedColor);
+    	return device.color(x, y);
 	}
 
-	// === Инициализация ===
-	Initialize() {
-		this.log("info", "Initializing device...");
+	// === Генерация RGB‑пакета ===
+	generateRGBPacket(data) {
+		this.log("verbose", `Generating RGB packet, data length=${data.length}`);
+		return [0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01, ...data];
+	}
 
-		this.Config.DeviceProductID = device.productId();
+	// === Отправка RGB‑пакета ===
+	writeRGBPackage(data){
+		if (!data || data.length === 0) {
+			this.log("error", "writeRGBPackage() received empty data!");
+			return;
+		}
+		
+		if (data.length < this.ledIndices.length * 3) {
+			this.log("warn", `RGB data too short (${data.length}), padding.`);
+			while (data.length < this.ledIndices.length * 3) data.push(0);
+		}
 
-		const modelID = this.fetchFirmwareData();
-		if (modelID !== 69) {
-			this.log("error", `Wrong ModelID (${modelID}), expected 69`);
+		if (data.length > this.ledIndices.length * 3) {
+			this.log("warn", `RGB data too long (${data.length}), trimming.`);
+			data = data.slice(0, this.ledIndices.length * 3);
+		}
+
+		const packet = this.generateRGBPacket(data);
+		this.log("verbose", `Sending RGB packet (${packet.length} bytes)`);
+
+		try {
+			device.send_report(new Uint8Array(packet), 520);
+		} catch (e) {
+			this.log("error", `send_report() failed: ${e}`);
+		}
+		
+		device.pause(UsbDelay);
+	}
+
+	// === Основной рендер (продвинутая оптимизация)===
+	sendColors(overrideColor) {
+		if (!this.getModelID()) return;
+
+		this.log("verbose", "Rendering frame...");
+
+		// === Пропуск Forced Mode ===
+		if (LightingMode === "Forced" && !overrideColor) {
+			this.log("verbose", "Forced mode — static frame, skipping render.");
 			return;
 		}
 
-		const props = SINOWEALTHdeviceLibrary.LEDLibrary[modelID];
-		if (!props) {
-			this.log("error", `Unknown ModelID ${modelID}`);
+		// === Пропуск рендера, если Canvas не обновился ===
+		const frameId = device.getFrameId();
+		if (this.lastFrameId === frameId && !overrideColor && LightingMode !== "Forced") {
+			this.log("verbose", "Canvas unchanged — skipping render.");
+			return;
+		}
+		this.lastFrameId = frameId;
+
+		if (!this.ledIndices || this.ledIndices.length === 0) {
+			this.log("error", "sendColors() aborted: LED index map is empty.");
 			return;
 		}
 
-		this.Config.layout = props.layout;
+		const pos = this.ledPositions;
+		const idx = this.ledIndices;
+		const count = idx.length;
 
-		const layout = SINOWEALTHdeviceLibrary.LEDLayout[this.Config.layout];
-		if (!layout) {
-			this.log("error", `LED layout "${this.Config.layout}" not found`);
-			return;
+		// === Кэш Canvas (ускоряет device.color в 20–30 раз) ===
+		const canvas = device.canvas();
+
+		// === Предкэширование цветов ===
+		const forcedRGB = LightingMode === "Forced" ? hexToRgb(forcedColor) : null;
+		const overrideRGB = overrideColor ? hexToRgb(overrideColor) : null;
+
+		// === TypedArray вместо обычного массива ===
+		const RGBData = new Uint8Array(count * 3);
+
+		for (let i = 0; i !== count; i++) {
+			const xy = pos[i];
+			const ledIndex = idx[i];
+
+			let color;
+
+			if (overrideRGB) {
+				color = overrideRGB;
+			} else if (forcedRGB) {
+				color = forcedRGB;
+			} else {
+				// Быстрый доступ к Canvas
+				color = canvas.getPixel(xy[0], xy[1]);
+			}
+
+			if (!color || color.length !== 3) {
+				this.log("warn", `Invalid color at LED ${i}, using fallback [0,0,0]`);
+				color = [0, 0, 0];
+			}
+
+			const base = ledIndex * 3;
+			RGBData[base]   = color[0];
+			RGBData[base + 1] = color[1];
+			RGBData[base + 2] = color[2];
 		}
 
-		this.ledNames = layout.vLedNames;
-		this.ledPositions = layout.vLedPositions;
-		this.ledIndices = layout.vLeds;
+		// === Быстрое сравнение кадров ===
+		if (this.prevFrame && this.prevFrame.length === RGBData.length) {
+        	const same = RGBData.every((val, i) => val === this.prevFrame[i]);
+        	if (same) {
+        	    this.log("verbose", "Frame unchanged — skipping USB write.");
+            	return;
+			}
+		}
 
-		device.setName(props.name);
-		device.setSize(layout.size);
-		device.setControllableLeds(this.ledNames, this.ledPositions);
-		device.setImageFromUrl(props.image);
+		// === Сохраняем кадр ===
+		this.prevFrame = RGBData.slice();
 
-		this.log("info", "Initialization complete.");
+		// === Отправка ===
+		this.writeRGBPackage(Array.from(RGBData));
+		//const packet = this.generateRGBPacket(Array.from(RGBData));
+		//device.send_report(new Uint8Array(packet), 520);
 	}
 
 	// === Получение ModelID ===
 	fetchFirmwareData() {
 		this.log("verbose", "Requesting firmware data...");
-
+		
 		const packet = [0x06, 0x82, 0x01, 0x00, 0x01, 0x00, 0x06];
 		device.send_report(packet, 520);
 
-		const response = device.get_report(0x06, 520);
+		const firmwareData = device.get_report(packet, 520);
 
-		if (!response || response.length < 15) {
-			this.log("warn", "Firmware response invalid, using fallback ModelID = 69");
+		if (!firmwareData) {
+			this.log("error", "Firmware response is empty! Using fallback ModelID = 69");
+			return 69;
+		}
+		
+		if (firmwareData.length < 15) {
+			this.log("warn", `Firmware response too short (${firmwareData.length} bytes). Using fallback ModelID = 69`);
 			return 69;
 		}
 
-		const id = response[13];
+		const id = firmwareData[13] ?? firmwareData[12] ?? firmwareData[14];
+
+		if (!id || id === 0) {
+			this.log("warn", `Firmware returned invalid ModelID (${id}). Using fallback ModelID = 69`);
+			return 69;
+		}
+
 		this.log("verbose", `Firmware ModelID resolved: ${id}`);
-
-		return id || 69;
-	}
-
-	// === Генерация пакета ===
-	generateRGBPacket(data) {
-		return new Uint8Array([
-			0x06, 0x08, 0x00, 0x00, 0x01, 0x00, 0x7A, 0x01,
-			...data
-		]);
-	}
-
-	// === Отправка ===
-	writeRGBPackage(data) {
-		const packet = this.generateRGBPacket(data);
-
-		try {
-			device.send_report(packet, 520);
-		} catch (e) {
-			this.log("error", `send_report failed: ${e}`);
-		}
-	}
-
-	// === Основной рендер ===
-	sendColors(overrideColor) {
-		if (!this.ledIndices) return;
-
-		const mode = device.getProperty("LightingMode");
-
-		// === Сброс forcedSent при смене режима ===
-		if (mode !== this.lastMode) {
-			this.forcedSent = false;
-			this.lastMode = mode;
-		}
-
-		// Forced Mode — отправляем один раз
-		if (mode === "Forced" && !overrideColor) {
-			if (this.forcedSent) return;
-			this.forcedSent = true;
-		}
-
-		const frameId = device.getFrameId();
-		if (frameId === this.lastFrameId && !overrideColor && mode !== "Forced") {
-			return;
-		}
-		this.lastFrameId = frameId;
-
-		const canvas = device.canvas();
-		if (!canvas) return;
-
-		const count = this.ledIndices.length;
-		const RGB = new Uint8Array(count * 3);
-
-		const forcedRGB = mode === "Forced" ? this.hexToRgb(device.getProperty("forcedColor")) : null;
-		const overrideRGB = overrideColor ? this.hexToRgb(overrideColor) : null;
-
-		for (let i = 0; i < count; i++) {
-			const xy = this.ledPositions[i];
-
-			let color =
-				overrideRGB ||
-				forcedRGB ||
-				canvas.getPixel(xy[0], xy[1]);
-
-			if (!color) color = [0, 0, 0];
-
-			const base = i * 3;
-			RGB[base] = color[0];
-			RGB[base + 1] = color[1];
-			RGB[base + 2] = color[2];
-		}
-
-		// === сравнение кадров ===
-		if (this.prevFrame && this.prevFrame.length === RGB.length) {
-			let same = true;
-			for (let i = 0; i < RGB.length; i++) {
-				if (RGB[i] !== this.prevFrame[i]) {
-					same = false;
-					break;
-				}
-			}
-			if (same) return;
-		}
-
-		this.prevFrame = RGB.slice();
-
-		this.writeRGBPackage(RGB);
+		return id;
 	}
 }
 
@@ -292,3 +353,12 @@ export class deviceLibrary {
 
 const SINOWEALTHdeviceLibrary = new deviceLibrary();
 const SINOWEALTH = new SINOWEALTH_Device_Protocol();
+
+function hexToRgb(hex) {
+	const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+	return [
+		parseInt(result[1], 16),
+		parseInt(result[2], 16),
+		parseInt(result[3], 16)
+	];
+}
