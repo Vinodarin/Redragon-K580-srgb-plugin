@@ -609,3 +609,19 @@ export function ControllableParameters() {
         { name: "logLevel", type: "list", values: ["None", "Basic", "Verbose", "Debug"], default: "Basic" }
     ];
 }
+
+// ==========================================================
+// ====== Паспорт устройства ====== Redragon K580 Vata ======
+// ==========================================================
+
+import {Assert} from "@SignalRGB/Errors.js";
+import DeviceDiscovery from "@SignalRGB/DeviceDiscovery";
+
+export function Name() { return "Redragon K580 Vata"; }
+export function VendorId() { return 0x320F; }
+export function ProductId() { return 0x5000; }
+export function Publisher() { return "Custom"; }
+export function Size() { return [24, 8]; }
+export function DeviceType() { return "keyboard"; }
+export function Validate(endpoint) { return endpoint.interface === 1 || endpoint.interface === 2; }
+export function ImageUrl() { return "https://assets.signalrgb.com/devices/brands/redragon/keyboards/k580.png"; }
