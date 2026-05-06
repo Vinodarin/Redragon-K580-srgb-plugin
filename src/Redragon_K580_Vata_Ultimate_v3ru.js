@@ -521,3 +521,36 @@ class Logger {
 // ====== Главный блок плагина ======
 // ==================================
 
+const deviceController = new DeviceController();
+const frameBuilder = new FrameBuilder(deviceController);
+const packetSender = new PacketSender(deviceController);
+const logger = new Logger();
+
+export function Initialize() {
+    deviceController.initialize();
+    deviceController.setSoftwareMode();
+}
+
+export function Render() {
+    const frame = frameBuilder.buildFrame();
+    if (!frameBuilder.isFrameChanged(frame)) return;
+    packetSender.sendFrame(frame);
+}
+
+export function Shutdown() {
+    const frame = frameBuilder.buildShutdownFrame("#000000");
+    packetSender.sendFrame(frame);
+}
+
+export function ControllableParameters() {
+    return [
+        { name: "packetSize", type: "number", min: 16, max: 48, default: 48 },
+        { name: "packetPause", type: "number", min: 0, max: 10, default: 3 },
+        { name: "useChecksum", type: "boolean", default: false },
+        { name: "LightingMode", type: "list", values: ["Canvas", "Forced"], default: "Canvas" },
+        { name: "forcedColor", type: "color", default: "#009bde" },
+        { name: "monochrome", type: "boolean", default: false },
+        { name: "monochromeMode", type: "list", values: ["Max", "Average", "Luma"], default: "Max" },
+        { name: "logLevel", type: "list", values: ["None", "Basic", "Verbose", "Debug"], default: "Basic" }
+    ];
+}
