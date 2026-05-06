@@ -1,7 +1,7 @@
 import {Assert} from "@SignalRGB/Errors.js";
 import DeviceDiscovery from "@SignalRGB/DeviceDiscovery";
 
-export function Name() { return "Sinowealth Device"; }
+export function Name() { return "Ardor Gamig Kusarigama"; }
 export function VendorId() { return 0x258a; }
 export function ProductId() { return [0x010c]; }
 export function Publisher() { return "Custom"; }
