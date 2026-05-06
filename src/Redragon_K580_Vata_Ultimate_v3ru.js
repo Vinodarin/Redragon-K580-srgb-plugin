@@ -52,7 +52,6 @@ class deviceLibrary {
 }
 
 const EVISIONdeviceLibrary = new deviceLibrary();
-}
 
 // ==================================================================
 // ====== DeviceController ====== Класс управления устройством ======
