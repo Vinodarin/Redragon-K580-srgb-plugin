@@ -443,3 +443,81 @@ class PacketSender {
         }
     }
 }
+
+// ======================================================
+// ====== Logger ====== Класс уровней логгирования ======
+// ======================================================
+
+class Logger {
+    constructor() {
+        this.level = typeof logLevel !== "undefined" ? logLevel : "Basic";
+    }
+
+    // ---------------------------------------------------------
+    // Основной метод логирования
+    // ---------------------------------------------------------
+    log(level, message) {
+        const order = {
+            "None": 0,
+            "Basic": 1,
+            "Verbose": 2,
+            "Debug": 3,
+            "Error": 4
+        };
+
+        // Если уровень сообщения ниже установленного — пропускаем
+        if (order[level] > order[this.level] && level !== "Error") return;
+
+        const timestamp = this.getTimestamp();
+        const formatted = `[${timestamp}] [${level}] ${message}`;
+
+        // Error всегда выводим
+        if (level === "Error") {
+            console.error(formatted);
+            return;
+        }
+
+        // Debug
+        if (level === "Debug") {
+            console.debug(formatted);
+            return;
+        }
+
+        // Verbose
+        if (level === "Verbose") {
+            console.log(formatted);
+            return;
+        }
+
+        // Basic
+        if (level === "Basic") {
+            console.log(formatted);
+            return;
+        }
+    }
+
+    // ---------------------------------------------------------
+    // Уровни логов
+    // ---------------------------------------------------------
+    basic(msg) { this.log("Basic", msg); }
+    verbose(msg) { this.log("Verbose", msg); }
+    debug(msg) { this.log("Debug", msg); }
+    error(msg) { this.log("Error", msg); }
+
+    // ---------------------------------------------------------
+    // Timestamp
+    // ---------------------------------------------------------
+    getTimestamp() {
+        const d = new Date();
+        return `${this.pad(d.getHours())}:${this.pad(d.getMinutes())}:${this.pad(d.getSeconds())}`;
+    }
+
+    pad(n) {
+        return n < 10 ? "0" + n : n;
+    }
+}
+
+// ==================================
+// ====== Главный блок плагина ======
+// ==================================
+
