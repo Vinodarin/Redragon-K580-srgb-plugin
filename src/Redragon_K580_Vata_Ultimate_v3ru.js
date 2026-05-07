@@ -50,28 +50,48 @@ class EvisionProtocol {
         this.totalPacketsSent = 0;
     }
 
-    calculateChecksum(data, index, bytesToSend) {
-        const sum = data.reduce((a, b) => a + b, 0);
+	calculateChecksum(data, index, bytesToSend) {
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+            sum += (data[i] || 0);
+        }
+
         const magic = (index >= 5) ? ((index - 5) * bytesToSend + 99) : (index * bytesToSend + 74);
         const val = sum + magic;
-        return { high: (val >>> 8) & 0xFF, low: val & 0xFF };
+
+        return { 
+            high: (val >>> 8) & 0xFF, 
+            low: val & 0xFF 
+        };
     }
 
     getHighLow(val) {
         return { high: (val >>> 8) & 0xFF, low: val & 0xFF };
     }
 
-    writePacket(index, data, bytesToSend, useChecksum, pauseTime) {
-        while (data.length < bytesToSend) { data.push(0); }
-        
-        const bytesSent = this.getHighLow(index * bytesToSend);
-        const checksum = useChecksum ? this.calculateChecksum(data, index, bytesToSend) : { low: 0, high: 0 };
-        
-        const header = [0x04, checksum.low, checksum.high, 0x12, bytesToSend, bytesSent.low, bytesSent.high, 0x00];
-        const packet = header.concat(data);
+	writePacket(index, data, bytesToSend, useChecksum, pauseTime) {
+        const fullData = new Array(bytesToSend).fill(0);
+        for(let i = 0; i < data.length; i++) {
+            fullData[i] = data[i];
+        }
+    
+        const bytesSent = index * bytesToSend;
+        const checksum = useChecksum ? this.calculateChecksum(fullData, index, bytesToSend) : { low: 0, high: 0 };
+    
+        const packet = [
+            0x04, 
+            checksum.low, checksum.high, 
+            0x12, 
+            bytesToSend, 
+            bytesSent & 0xFF, (bytesSent >>> 8) & 0xFF, 
+            0x00,
+			...fullData
+        ];
 
         device.write(packet, 64);
-        device.pause(pauseTime);
+        if (pauseTime > 0) {
+			device.pause(pauseTime);
+        }
     }
 }
 
@@ -166,7 +186,7 @@ export function ControllableParameters() {
         {property:"forcedColor", group:"lighting", label:"Принудительный цвет", type:"color", default:"#FF0000"},
         {property:"monochrome", group:"lighting", label:"Монохром", type:"boolean", default:false},
         {property:"monochromeMode", group:"lighting", label:"Яркость монохрома", type:"combobox", values:["Max", "Average", "Luma"], default:"Max"},
-        {property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48", "52"], default:"48"},
+        {property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48"], default:"48"},
         {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"3"},
         {property:"useChecksum", group:"settings", label:"Чексумма", type:"boolean", default:true},
         {property:"fps", group:"settings", label:"Частота кадров (FPS)", type:"combobox", values:["15", "30", "60"], default:"30"},
