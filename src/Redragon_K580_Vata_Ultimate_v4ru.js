@@ -1,0 +1,1 @@
+Redragon_K580_Vata_Ultimate_v3ru.js
