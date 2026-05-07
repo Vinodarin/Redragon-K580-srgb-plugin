@@ -352,10 +352,6 @@ export class EVISION_Device_Protocol {
 			this.setLedPositions(DeviceProperties.vLedPositions);
 			this.setLeds(DeviceProperties.vLeds);
 
-    console.log("🔢 LED count =", this.Config.Leds.length);
-    device.notify("🔢 LED count", `Всего LED: ${this.Config.Leds.length}`, 1);
-
-
 			this.detectDeviceEndpoint(DeviceProperties);
 
 			device.setSize(DeviceProperties.size);
