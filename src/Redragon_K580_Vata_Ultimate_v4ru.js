@@ -81,6 +81,12 @@ export class EVISION_Device_Protocol {
 		// Счётчик пакетов
 		this.totalPacketsSent = 0;
 		this.basicPacketsPrinted = false;
+
+		// --- Uint8Array буферы ---
+		this.LED_COUNT = 120;
+		this.frame = new Uint8Array(this.LED_COUNT * 3);
+		this.packetHeader = new Uint8Array(8);
+		this.packet = null;
 	}
 	// --- Сеттеры и геттеры ---
 	setModelID(id) { this.Config.ModelID = id; }
@@ -150,176 +156,186 @@ export class EVISION_Device_Protocol {
 	}
 
 	sendColors(overrideColor) {
-		if (!this.Config.ModelID || this.Config.layout === "None") return;
+    	if (!this.Config.ModelID || this.Config.layout === "None") return;
 
-		const { LedPositions, Leds } = this.Config;
-		const RGBData = [];
+    	const { LedPositions, Leds } = this.Config;
+    	const mode = typeof LightingMode !== "undefined" ? LightingMode : "Canvas";
+    	const fColor = typeof forcedColor !== "undefined" ? forcedColor : "#009bde";
+    	const mono = typeof monochrome !== "undefined" ? monochrome : false;
+    	const monoMode = typeof monochromeMode !== "undefined" ? monochromeMode : "Max";
 
-		for (let i = 0; i < Leds.length; i++) {
-			const [px, py] = LedPositions[i];
-			const mode = typeof LightingMode !== "undefined" ? LightingMode : "Canvas";
-			const fColor = typeof forcedColor !== "undefined" ? forcedColor : "#009bde";
-			const color = overrideColor
-				? this.hexToRgb(overrideColor)
-				: (mode === "Forced" ? this.hexToRgb(fColor) : device.color(px, py));
+    	const frame = this.frame;
 
-			const idx = Leds[i] * 3;
-			if (typeof monochrome !== "undefined" && monochrome) {
-				let gray;
-				switch (monochromeMode) {
-					case "Average":
-						gray = Math.round((color[0] + color[1] + color[2]) / 3);
-						break;
-					case "Luma":
-						gray = Math.round(0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]);
-						break;
-					case "Max":
-					default:
-						gray = Math.max(...color);
-						break;
-				}
-				RGBData[idx] = gray;
-				RGBData[idx + 1] = gray;
-				RGBData[idx + 2] = gray;
-			} else {
-				RGBData[idx] = color[0];
-				RGBData[idx + 1] = color[1];
-				RGBData[idx + 2] = color[2];
+    	for (let i = 0; i < Leds.length; i++) {
+        	const ledIndex = Leds[i] * 3;
+        	const [px, py] = LedPositions[i];
+
+        	let rgb = overrideColor
+            	? this.hexToRgb(overrideColor)
+            	: (mode === "Forced" ? this.hexToRgb(fColor) : device.color(px, py));
+
+			if (mono) {
+            	let gray;
+            	switch (monoMode) {
+                	case "Average":
+						gray = (rgb[0] + rgb[1] + rgb[2]) / 3;
+                    	break;
+                	case "Luma":
+                    	gray = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+                    	break;
+                	default:
+                    	gray = Math.max(rgb[0], rgb[1], rgb[2]);
+            	}
+            	gray |= 0;
+            	frame[ledIndex]     = gray;
+            	frame[ledIndex + 1] = gray;
+            	frame[ledIndex + 2] = gray;
+        	} else {
+            	frame[ledIndex]     = rgb[0];
+            	frame[ledIndex + 1] = rgb[1];
+            	frame[ledIndex + 2] = rgb[2];
 			}
-		}
-		this.writeRGBPackage(RGBData);
+    	}
+
+		this.writeRGBPackage();
 	}
+	
+	writeRGBPackage() {
+    	const bytesToSend = packetSize || 48;
+    	const pauseTime   = packetPause || 3;
+    	const FPS         = fps || 30;
+    	this.LOGLEVEL     = logLevel || "Basic";
 
-	writeRGBPackage(RGBData){
-		// Берём напрямую из GUI, а если параметр не задан — используем дефолт
-		const bytesToSend = packetSize || 48;
-		const pauseTime   = packetPause || 3;
-		const FPS = fps || 30;
-		this.LOGLEVEL = logLevel || "Basic"; // "None", "Basic", "Verbose"
+    	const frame = this.frame;
+    	const totalBytes = frame.length;
+    	const TotalPackets = Math.ceil(totalBytes / bytesToSend);
 
-		
-		// Количество пакетов рассчитывается на основе актуального размера
-		const TotalPackets = Math.ceil(RGBData.length / bytesToSend);
-		
-		// вывод FPS
-		if (this.prevFPS !== FPS) {
-			console.log(`🎞️ Current FPS: ${FPS}`);
-			this.prevFPS = FPS;
-		}
-		
-		if (!this.packetInfoPrinted || TotalPackets !== this.prevTotalPackets) {
-        console.log(`📦 TotalPackets=${TotalPackets}`);
-        this.prevTotalPackets = TotalPackets;
-        this.packetInfoPrinted = true;
-		this.basicPacketsPrinted = false
-		}
+    	if (!this.packet || this.packet.length !== (8 + bytesToSend)) {
+        	this.packet = new Uint8Array(8 + bytesToSend);
+    	}
 
-		
-		// измеряем время отправки (Date.now вместо performance.now)
-		const startTime = Date.now();
-		
-		// Выводим строку один раз при старте (если ещё не было значений) или если изменился размер пакета/пауза
-		if (!this.paramsInfoPrinted ||
-			bytesToSend !== this.prevPacketSize ||
-			pauseTime !== this.prevPauseTime ||
-			useChecksum !== this.prevUseChecksum) {
-		
-		if (bytesToSend !== this.prevPacketSize) {
-			console.log(`⚙️ Packet Size изменён: ${this.prevPacketSize} → ${bytesToSend}`);
-		}
-		if (pauseTime !== this.prevPauseTime) {
-			console.log(`️⏱️ Packet Pause изменён: ${this.prevPauseTime} → ${pauseTime}`);
-		}
-		if (useChecksum !== this.prevUseChecksum) {
-			console.log(`🔒️ UseChecksum изменён: ${this.prevUseChecksum} → ${useChecksum}`);
-		}
-		if (this.LOGLEVEL !== "None") {
-            console.log(`📦 Packet Size=${bytesToSend}, Pause=${pauseTime}, UseChecksum=${useChecksum}, TotalPackets=${TotalPackets}`);
-        }
-		
-			this.prevPacketSize = bytesToSend;
-			this.prevPauseTime = pauseTime;
-			this.prevUseChecksum = useChecksum;
-			this.paramsInfoPrinted = true;
-		}
-		
-		// Собирвем номера пакетов в массив
-		let packetLines = [];
-		let errorCount = 0; // счётчик ошибок
+    	const packet = this.packet;
+    	const header = this.packetHeader;
 
-		for (let index = 0; index < TotalPackets; index++) {
-			const start = index * bytesToSend;
-			const data = RGBData.slice(start, start + bytesToSend);
-			
-			// Дозаполняем пакет нулями, если в конце осталось меньше байт
-			while(data.length < bytesToSend) { data.push(0); }
-			
-			// Calculate bytes sent
-			const bytesSent = this.getHighLow(index * bytesToSend);
+		// FPS лог
+    	if (this.prevFPS !== FPS) {
+        	console.log(`🎞️ Current FPS: ${FPS}`);
+        	this.prevFPS = FPS;
+    	}
 
-			// Calculate checksum
-			const checksum = (typeof useChecksum !== "undefined" && useChecksum)
-				? this.calculateChecksum(data, index, bytesToSend)
-				: { low: 0, high: 0 };	
+    	// Packet count лог
+    	if (!this.packetInfoPrinted || TotalPackets !== this.prevTotalPackets) {
+        	console.log(`📦 TotalPackets=${TotalPackets}`);
+        	this.prevTotalPackets = TotalPackets;
+        	this.packetInfoPrinted = true;
+        	this.basicPacketsPrinted = false;
+    	}
 
-			const header = [0x04, checksum.low, checksum.high, 0x12, bytesToSend, bytesSent.low, bytesSent.high, 0x00];
-			const packet = header.concat(data);
-			
+    	// Параметры
+    	if (!this.paramsInfoPrinted ||
+        	bytesToSend !== this.prevPacketSize ||
+        	pauseTime !== this.prevPauseTime ||
+        	useChecksum !== this.prevUseChecksum) {
+
+        	if (bytesToSend !== this.prevPacketSize)
+            	console.log(`⚙️ Packet Size изменён: ${this.prevPacketSize} → ${bytesToSend}`);
+
+        	if (pauseTime !== this.prevPauseTime)
+            	console.log(`⏱️ Packet Pause изменён: ${this.prevPauseTime} → ${pauseTime}`);
+
+        	if (useChecksum !== this.prevUseChecksum)
+            	console.log(`🔒 UseChecksum изменён: ${this.prevUseChecksum} → ${useChecksum}`);
+
+        	console.log(`📦 Packet Size=${bytesToSend}, Pause=${pauseTime}, UseChecksum=${useChecksum}, TotalPackets=${TotalPackets}`);
+
+        	this.prevPacketSize = bytesToSend;
+        	this.prevPauseTime = pauseTime;
+        	this.prevUseChecksum = useChecksum;
+        	this.paramsInfoPrinted = true;
+    	}
+
+    	let errorCount = 0;
+    	let packetLines = [];
+
+    	for (let index = 0; index < TotalPackets; index++) {
+
+        	const start = index * bytesToSend;
+        	const end = Math.min(start + bytesToSend, totalBytes);
+
+        	const chunk = frame.subarray(start, end);
+
+        	const bytesSent = this.getHighLow(start);
+
+        	header[0] = 0x04;
+
+        	if (useChecksum) {
+            	const cs = this.calculateChecksum(chunk, index, bytesToSend);
+            	header[1] = cs.low;
+            	header[2] = cs.high;
+        	} else {
+            	header[1] = 0;
+            	header[2] = 0;
+        	}
+
+			header[3] = 0x12;
+        	header[4] = bytesToSend;
+        	header[5] = bytesSent.low;
+        	header[6] = bytesSent.high;
+        	header[7] = 0x00;
+
+        	packet.set(header, 0);
+        	packet.set(chunk, 8);
+
+        	if (chunk.length < bytesToSend) {
+            	packet.fill(0, 8 + chunk.length);
+        	}
+
 			try {
-				device.write(packet, 64);
-				device.pause(pauseTime); // теперь пауза задаётся из GUI
-			} catch (err) {
-				console.error("Error writing RGB packet:", err);
-				errorCount++;
-				if (errorCount >= 3) {
-					device.notify("❌ Критическая ошибка", "Устройство не отвечает на пакеты данных. Попробуйте переподключить клавиатуру.", 3);
-					return;
-				} else {
-					device.notify("❌ Ошибка передачи", `Сбой при отправке пакета #${index + 1}. Попытка ${errorCount}/3.`, 2);
-				}
-			}
+            	device.write(packet, 64);
+            	device.pause(pauseTime);
+        	} catch (err) {
+            	console.error("Error writing RGB packet:", err);
+            	errorCount++;
+            	if (errorCount >= 3) {
+                	device.notify("❌ Критическая ошибка", "Устройство не отвечает на пакеты данных.", 3);
+                	return;
+            	} else {
+                	device.notify("❌ Ошибка передачи", `Сбой при отправке пакета #${index + 1}.`, 2);
+            	}
+        	}
 
-			// вывод пакетов зависит от уровня логов
-			if (this.LOGLEVEL === "Basic" && !this.basicPacketsPrinted) {
-				packetLines.push(`📦 Packet #${index + 1}/${TotalPackets}`)
-			}
-			
-			// полный вывод пакета только в Verbose
-			if (this.LOGLEVEL === "Verbose") {
-				console.log(`📦 Packet #${index + 1}/${TotalPackets}:`, packet);
-			}
-		}
-		// выводим список пакетов один раз за цикл
-		if (this.LOGLEVEL === "Basic" && packetLines.length > 0 && !this.basicPacketsPrinted) {
-			console.log(packetLines.join("\n"));
-			this.basicPacketsPrinted = true;
-			console.log("✅ Все пакеты успешно отправлены");
-		}
-				
-		// считаем общее количество отправленных пакетов
-		this.totalPacketsSent += TotalPackets;
-		
-		const endTime = Date.now();
-		if (this.LOGLEVEL === "Verbose") {
-			console.log(`⏱️ Packets sent in ${(endTime - startTime)} ms`);
-			console.log(`📦 Total packets sent so far: ${this.totalPacketsSent}`);
-		}
+        	if (this.LOGLEVEL === "Basic" && !this.basicPacketsPrinted) {
+            	packetLines.push(`📦 Packet #${index + 1}/${TotalPackets}`);
+        	}
+
+        	if (this.LOGLEVEL === "Verbose") {
+            	console.log(`📦 Packet #${index + 1}/${TotalPackets}:`, packet);
+        	}
+    	}
+
+    	if (this.LOGLEVEL === "Basic" && packetLines.length > 0 && !this.basicPacketsPrinted) {
+        	console.log(packetLines.join("\n"));
+        	this.basicPacketsPrinted = true;
+        	console.log("✅ Все пакеты успешно отправлены");
+    	}
+
+    	this.totalPacketsSent += TotalPackets;
 	}
+	
+	calculateChecksum(chunk, index, bytesToSend) {
+    	let sum = 0;
+    	for (let i = 0; i < chunk.length; i++) sum += chunk[i];
 
-	calculateChecksum(packet, index, bytesToSend) {
-		const packetSum = packet.reduce((sum, num) => sum + num, 0);
+    	const result = (index >= 5)
+        	? this.getHighLow(sum + ((index - 5) * bytesToSend) + 99)
+        	: this.getHighLow(sum + (index * bytesToSend) + 74);
 
-		let result;
-		if (index >= 5) {
-			result = this.getHighLow(packetSum +(( index - 5 ) * bytesToSend) + 99);
-		} else {
-			result = this.getHighLow(packetSum + (index * bytesToSend) + 74);
-		}
-		if (this.LOGLEVEL !== "None" && !this.checksumInfoPrinted) {
-			console.log(`🔑 Checksum calc | index=${index}, sum=${packetSum}, result.low=${result.low}, result.high=${result.high}`);
-			this.checksumInfoPrinted = true;
-		}
-		return result;
+    	if (this.LOGLEVEL !== "None" && !this.checksumInfoPrinted) {
+        	console.log(`🔑 Checksum calc | index=${index}, sum=${sum}, result.low=${result.low}, result.high=${result.high}`);
+        	this.checksumInfoPrinted = true;
+    	}
+
+    	return result;
 	}
 
 	getHighLow(value) {
