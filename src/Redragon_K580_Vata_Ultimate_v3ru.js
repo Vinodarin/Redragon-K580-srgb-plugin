@@ -105,9 +105,17 @@ class KeyboardEngine {
     }
 
     hexToRgb(hex) {
-        const bigint = parseInt(hex.replace('#', ''), 16);
-        return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255];
-    }
+        const colorStr = String(hex || "#000000");
+        const match = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(colorStr);
+        if (match) {
+            return [
+                parseInt(match[1], 16),
+                parseInt(match[2], 16),
+                parseInt(match[3], 16)
+            ];
+        }
+        return [0, 0, 0];
+	}
 
     updateModel(modelName) {
         if (modelName === "None") {
@@ -133,36 +141,54 @@ class KeyboardEngine {
         }
     }
 
-    render() {
+	render() {
         if (!this.currentModel) return;
 
         const RGBData = [];
         const { vLeds, vLedPositions } = this.currentModel;
+        
+        // Берем системную яркость (0-255 -> 0.0-1.0)
+        const systemBrightness = device.getBrightness() / 255;
+        // Универсальный цвет (и для Forced, и для Tint)
+        const targetRGB = this.hexToRgb(forcedColor);
 
         for (let i = 0; i < vLeds.length; i++) {
             const [px, py] = vLedPositions[i];
-            let color = (LightingMode === "Forced") ? this.hexToRgb(forcedColor) : device.color(px, py);
+            let r, g, b;
 
-            if (monochrome) {
-                let v;
-                if (monochromeMode === "Average") v = (color[0] + color[1] + color[2]) / 3;
-                else if (monochromeMode === "Luma") v = 0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2];
-                else v = Math.max(...color);
-                color = [v, v, v];
+            if (LightingMode === "Forced") {
+                // Просто заливка цветом с учетом яркости
+                r = targetRGB[0] * systemBrightness;
+                g = targetRGB[1] * systemBrightness;
+                b = targetRGB[2] * systemBrightness;
+            } 
+            else if (LightingMode === "Canvas + Tint") {
+                const screen = device.color(px, py);
+                
+                const luma = (0.2126 * screen[0] + 0.7152 * screen[1] + 0.0722 * screen[2]) / 255;
+                
+                r = targetRGB[0] * luma * systemBrightness;
+                g = targetRGB[1] * luma * systemBrightness;
+                b = targetRGB[2] * luma * systemBrightness;
+            } 
+            else {
+                const screen = device.color(px, py);
+                r = screen[0];
+                g = screen[1];
+                b = screen[2];
             }
 
             const idx = vLeds[i] * 3;
-            RGBData[idx] = color[0];
-            RGBData[idx + 1] = color[1];
-            RGBData[idx + 2] = color[2];
+            RGBData[idx]     = Math.round(r);
+            RGBData[idx + 1] = Math.round(g);
+            RGBData[idx + 2] = Math.round(b);
         }
 
         const bSize = packetSize || 48;
-        const pPause = packetPause || 3;
         const count = Math.ceil(RGBData.length / bSize);
 
         for (let i = 0; i < count; i++) {
-            this.protocol.writePacket(i, RGBData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, pPause);
+            this.protocol.writePacket(i, RGBData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, packetPause);
         }
     }
 }
@@ -181,24 +207,26 @@ export function Validate(endpoint) { return endpoint.interface === 1 || endpoint
 
 export function ControllableParameters() {
     return [
-        {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: ["Redragon K580 Vata", "None"], default: "None"},
-        {property:"LightingMode", group:"lighting", label:"Режим", type:"combobox", values:["Canvas", "Forced"], default:"Canvas"},
-        {property:"forcedColor", group:"lighting", label:"Принудительный цвет", type:"color", default:"#FF0000"},
-        {property:"monochrome", group:"lighting", label:"Монохром", type:"boolean", default:false},
-        {property:"monochromeMode", group:"lighting", label:"Яркость монохрома", type:"combobox", values:["Max", "Average", "Luma"], default:"Max"},
-        {property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48"], default:"48"},
+        {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: ["Redragon K580 Vata", "None"], default: "Redragon K580 Vata"},
+        {property:"LightingMode", group:"lighting", label:"Режим работы", type:"combobox", values:["Canvas", "Canvas + Tint", "Forced"], default:"Canvas"},
+		{
+            property:"forcedColor", 
+            group:"lighting", 
+            label:"Цвет (Force/Tint)", 
+            type:"color", 
+            default:"#FF0000", 
+            isVisible: "LightingMode === 'Forced' || LightingMode === 'Canvas + Tint'"
+        },
+		{property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48", "50"], default:"48"},
         {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"3"},
         {property:"useChecksum", group:"settings", label:"Чексумма", type:"boolean", default:true},
         {property:"fps", group:"settings", label:"Частота кадров (FPS)", type:"combobox", values:["15", "30", "60"], default:"30"},
     ];
 }
-
 export function Initialize() { 
     EVISION = new EvisionProtocol();
     Engine = new KeyboardEngine(EVISION, deviceLibrary);
     Engine.updateModel(forcedModel);
-    
-    // Пробуем установить FPS с проверкой, чтобы плагин не падал
     const targetFps = parseInt(fps) || 30;
     if (typeof device.setFrameRate === "function") {
         device.setFrameRate(targetFps);
@@ -208,24 +236,19 @@ export function Initialize() {
 
     device.log(`[Система] Инициализация завершена. Настройки: FPS=${fps}, PacketSize=${packetSize}, Pause=${packetPause}ms`);
 }
-
 export function Render() { 
     if (Engine && forcedModel !== "None") {
         Engine.render(); 
     }
 }
-
 export function Shutdown(SystemSuspending) {
-    // Можно добавить очистку при выключении
 }
-
 export function onforcedModelChanged() { 
     if (Engine) {
         Engine.updateModel(forcedModel); 
         device.log(`[Модель] Переключено на: ${forcedModel}`);
     }
 }
-
 export function onfpsChanged() {
     const targetFps = parseInt(fps) || 30;
     if (typeof device.setFrameRate === "function") {
@@ -235,15 +258,12 @@ export function onfpsChanged() {
     }
     device.log(`[Настройки] Частота кадров изменена на: ${fps}`);
 }
-
 export function onpacketSizeChanged() {
     device.log(`[Настройки] Размер пакета изменен на: ${packetSize} байт`);
 }
-
 export function onpacketPauseChanged() {
     device.log(`[Настройки] Пауза между пакетами: ${packetPause} мс`);
 }
-
 export function onuseChecksumChanged() {
     device.log(`[Настройки] Проверка контрольной суммы: ${useChecksum ? "Включена" : "Отключена"}`);
 }
