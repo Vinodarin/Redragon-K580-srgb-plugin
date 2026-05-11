@@ -52,16 +52,12 @@ const deviceLibrary = {
 	"None": {
 		name: "EVision Device",
 		image: "https://assets.signalrgb.com/devices/default/misc/usb-drive-render.png",
-		layout:	"None",
 	}
 }
 
 /* --- СЛОЙ 2: ПРОТОКОЛ EVISION --- */
 class EvisionProtocol {
-    constructor() {
-        this.prevParams = {};
-        this.totalPacketsSent = 0;
-    }
+    constructor() {}
 
 	calculateChecksum(data, index, bytesToSend) {
         let sum = 0;
@@ -76,10 +72,6 @@ class EvisionProtocol {
             high: (val >>> 8) & 0xFF, 
             low: val & 0xFF 
         };
-    }
-
-    getHighLow(val) {
-        return { high: (val >>> 8) & 0xFF, low: val & 0xFF };
     }
 
 	writePacket(index, data, bytesToSend, useChecksum, pauseTime) {
@@ -114,7 +106,6 @@ class KeyboardEngine {
         this.protocol = protocol;
         this.library = library;
         this.currentModel = null;
-        this.renderNotified = false;
     }
 
     hexToRgb(hex) {
@@ -131,11 +122,12 @@ class KeyboardEngine {
 	}
 
     updateModel(modelName) {
-        if (modelName === "None") {
+		const cleanName = modelName.trim();
+        if (cleanName === "None") {
             this.currentModel = null;
             return;
         }
-        const props = this.library[modelName];
+        const props = this.library[cleanName];
         if (props) {
             this.currentModel = props;
             device.setName(props.name);
@@ -156,51 +148,57 @@ class KeyboardEngine {
 
 	render() {
         if (!this.currentModel) return;
-
-        const RGBData = [];
+		
+		const currentMode = LightingMode.trim();
         const { vLeds, vLedPositions } = this.currentModel;
-        
-        // Берем системную яркость (0-255 -> 0.0-1.0)
+		const RGBData = [];
+                
         const systemBrightness = device.getBrightness() / 255;
-        // Универсальный цвет (и для Forced, и для Tint)
         const targetRGB = this.hexToRgb(forcedColor);
+		const [tR, tG, tB] = targetRGB;
 
         for (let i = 0; i < vLeds.length; i++) {
             const [px, py] = vLedPositions[i];
+			const screen = device.color(px, py);
             let r, g, b;
+			
+			switch (currentMode) {
 
-            if (LightingMode === "Forced") {
-                // Просто заливка цветом с учетом яркости
-                r = targetRGB[0] * systemBrightness;
-                g = targetRGB[1] * systemBrightness;
-                b = targetRGB[2] * systemBrightness;
-            } 
-            else if (LightingMode === "Canvas + Tint") {
-                const screen = device.color(px, py);
-                
-                const luma = (0.2126 * screen[0] + 0.7152 * screen[1] + 0.0722 * screen[2]) / 255;
-                
-                r = targetRGB[0] * luma * systemBrightness;
-                g = targetRGB[1] * luma * systemBrightness;
-                b = targetRGB[2] * luma * systemBrightness;
-            } 
-            else {
-                const screen = device.color(px, py);
-                r = screen[0];
-                g = screen[1];
-                b = screen[2];
+				case "Forced":
+					r = tR * systemBrightness;
+					g = tG * systemBrightness;
+					b = tB * systemBrightness;
+					break;
+             
+				case "Canvas + Tint":
+					const luma = (0.2126 * screen[0] + 0.7152 * screen[1] + 0.0722 * screen[2]) / 255;
+					const boost = 2.0;
+					r = tR * luma * boost * systemBrightness;
+					g = tG * luma * boost * systemBrightness;
+					b = tB * luma * boost * systemBrightness;
+					break;
+			
+				case "Canvas Blend":
+					const blendBoost = 1.2;
+					r = (screen[0] * targetRGB[0] / 255) * systemBrightness * blendBoost;
+					g = (screen[1] * targetRGB[1] / 255) * systemBrightness * blendBoost;
+					b = (screen[2] * targetRGB[2] / 255) * systemBrightness * blendBoost;
+					break;
+							
+				default:
+					[r, g, b] = screen;
+					break;
             }
 
             const idx = vLeds[i] * 3;
-            RGBData[idx]     = Math.round(r);
-            RGBData[idx + 1] = Math.round(g);
-            RGBData[idx + 2] = Math.round(b);
+            RGBData[idx]     = Math.min(255, Math.round(r));
+            RGBData[idx + 1] = Math.min(255, Math.round(g));
+            RGBData[idx + 2] = Math.min(255, Math.round(b));
         }
 
         const bSize = packetSize || 48;
-        const count = Math.ceil(RGBData.length / bSize);
-
-        for (let i = 0; i < count; i++) {
+		const packetCount = Math.ceil(RGBData.length / bSize);
+        for (let i = 0; i < packetCount; i++) {
             this.protocol.writePacket(i, RGBData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, packetPause);
         }
     }
@@ -222,18 +220,11 @@ export function Validate(endpoint) { return endpoint.interface === 1 || endpoint
 
 export function ControllableParameters() {
     return [
-        {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: ["Redragon K580 Vata", "None"], default: "Redragon K580 Vata"},
-        {property:"LightingMode", group:"lighting", label:"Режим работы", type:"combobox", values:["Canvas", "Canvas + Tint", "Forced"], default:"Canvas"},
-		{
-            property:"forcedColor", 
-            group:"lighting", 
-            label:"Цвет (Force/Tint)", 
-            type:"color", 
-            default:"#FF0000", 
-            isVisible: "LightingMode === 'Forced' || LightingMode === 'Canvas + Tint'"
-        },
-		{property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48", "50"], default:"48"},
-        {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"3"},
+        {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: [" Redragon K580 Vata ", " None "], default: " Redragon K580 Vata "},
+        {property:"LightingMode", group:"lighting", label:"Режим работы", type:"combobox", values:["Canvas", "Canvas + Tint", "Canvas Blend", "Forced"], default:"Canvas"},
+		{property:"forcedColor", group:"lighting", label:"Цвет (Force/Tint)", type:"color", default:"#FF0000", isVisible: "LightingMode === 'Forced' || LightingMode === 'Canvas + Tint'"},
+		{property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48"], default:"48"},
+        {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"2"},
         {property:"useChecksum", group:"settings", label:"Чексумма", type:"boolean", default:true},
         {property:"fps", group:"settings", label:"Частота кадров (FPS)", type:"combobox", values:["15", "30", "60"], default:"30"},
     ];
@@ -242,13 +233,7 @@ export function Initialize() {
     EVISION = new EvisionProtocol();
     Engine = new KeyboardEngine(EVISION, deviceLibrary);
     Engine.updateModel(forcedModel);
-    const targetFps = parseInt(fps) || 30;
-    if (typeof device.setFrameRate === "function") {
-        device.setFrameRate(targetFps);
-    } else if (typeof device.setFramerate === "function") {
-        device.setFramerate(targetFps);
-    }
-
+	onfpsChanged();
     device.log(`[Система] Инициализация завершена. Настройки: FPS=${fps}, PacketSize=${packetSize}, Pause=${packetPause}ms`);
 }
 export function Render() { 
