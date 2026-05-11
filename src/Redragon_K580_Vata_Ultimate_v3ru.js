@@ -46,7 +46,6 @@ const deviceLibrary = {
 			[0, 6], [1, 6], [2, 6], [3, 6],					[6, 6],									 [11, 6], [12, 6], [13, 6], [14, 6],	[15, 6], [16, 6], [17, 6], 	[18, 6],		  [20, 6],			[22, 7],
 			[0, 7],																																															[22, 7],
 		],
-		size: [24, 8],
 		endpoint: [{ "interface": 1, "usage": 0x0092, "usage_page": 0xFF1C, "collection": 0x0004 }]
 	},
 	"None": {
@@ -212,7 +211,7 @@ export function Name() { return "Redragon K580 Vata"; }
 export function VendorId() { return 0x320F; }
 export function ProductId() { return 0x5000; }
 export function Publisher() { return "Vinodarin & Дарья (Gemini AI)"; }
-export function Size() { return [24, 8]; }
+export function Size() { return [23, 8]; }
 export function DeviceType(){ return "keyboard"; }
 export function Version() { return "1.2.0"; }
 export function Description() { return "Индивидуальный драйвер. Авторы: Vinodarin и Дарья. Поддержка Universal Tinting и синхронизация яркости."; }
