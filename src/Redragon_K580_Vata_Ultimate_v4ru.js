@@ -90,16 +90,27 @@ class KeyboardEngine {
     }
 
     updateModel(modelName) {
-        const cleanName = modelName.trim();
+		const cleanName = modelName.trim();
+        if (cleanName === "None") {
+            this.currentModel = null;
+            return;
+        }
         const props = this.library[cleanName];
         if (props) {
             this.currentModel = props;
+            device.setName(props.name);
+            device.setImageFromUrl(props.image);
             device.setSize(props.size);
             device.setControllableLeds(props.vLedNames, props.vLedPositions);
+            
+            // Поиск эндпоинта
             const hid = device.getHidEndpoints();
             const target = props.endpoint[0];
             const found = hid.find(e => e.interface === target.interface && e.usage === target.usage);
-            if (found) { device.set_endpoint(found.interface, found.usage, found.usage_page, found.collection); }
+            
+            if (found) {
+                device.set_endpoint(found.interface, found.usage, found.usage_page, found.collection);
+            }
         }
     }
 
@@ -195,7 +206,7 @@ export function Validate(endpoint) { return endpoint.interface === 1 || endpoint
 
 export function ControllableParameters() {
     return [
-        {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: ["Redragon K580 Vata", "None"], default: "Redragon K580 Vata"},
+        {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: [" Redragon K580 Vata ", " None "], default: " Redragon K580 Vata "},
         {property:"LightingMode", group:"lighting", label:"Режим работы", type:"combobox", values:["Canvas", "Canvas + Tint", "Canvas Blend", "Forced", "Genshin Sense"], default:"Canvas"},
 		{property:"forcedColor", group:"lighting", label:"Цвет (Manual)", type:"color", default:"#FF0000", isVisible: "LightingMode === 'Forced' || LightingMode === 'Canvas + Tint' || LightingMode === 'Canvas Blend'"},
 		{property:"smoothSpeed", group:"lighting", label:"Плавность", type:"combobox", values:["0.1", "0.2", "0.3", "0.5", "1.0"], default:"0.3"},
