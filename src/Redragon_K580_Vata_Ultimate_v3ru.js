@@ -64,7 +64,8 @@ class EvisionProtocol {
             sum += (data[i] || 0);
         }
 
-        const magic = (index >= 5) ? ((index - 5) * bytesToSend + 99) : (index * bytesToSend + 74);
+        // const magic = (index >= 5) ? ((index - 5) * bytesToSend + 99) : (index * bytesToSend + 74);
+		const magic = (index * bytesToSend + 74);
         const val = sum + magic;
 
         return { 
@@ -202,6 +203,7 @@ class KeyboardEngine {
 /* --- ИНИЦИАЛИЗАЦИЯ (SignalRGB API) --- */
 let EVISION;
 let Engine;
+let lastRenderTime = 0;
 
 export function Name() { return "Redragon K580 Vata"; }
 export function VendorId() { return 0x320F; }
@@ -209,7 +211,7 @@ export function ProductId() { return 0x5000; }
 export function Publisher() { return "Vinodarin & Дарья (Gemini AI)"; }
 export function Size() { return [23, 8]; }
 export function DeviceType(){ return "keyboard"; }
-export function Version() { return "1.2.0"; }
+export function Version() { return "1.3.0"; }
 export function Description() { return "Индивидуальный драйвер. Авторы: Vinodarin и Дарья. Поддержка Universal Tinting и синхронизация яркости."; }
 export function Validate(endpoint) { return endpoint.interface === 1 || endpoint.interface === 2; }
 
@@ -221,39 +223,52 @@ export function ControllableParameters() {
 		{property:"smoothSpeed", group:"lighting", label:"Плавность", type:"combobox", values:["0.1", "0.2", "0.3", "0.5", "1.0"], default:"0.3"},
 		{property:"canvasIntensity", group:"lighting", label:"Яркость", type:"number", min:1, max:5, default:5},
 		{property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48"], default:"48"},
-        {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"2"},
+        {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"3"},
         {property:"useChecksum", group:"settings", label:"Чексумма", type:"boolean", default:true},
-        {property:"fps", group:"settings", label:"Частота кадров (FPS)", type:"combobox", values:["15", "30", "45", "60"], default:"30"},
     ];
 }
 export function Initialize() { 
     EVISION = new EvisionProtocol();
     Engine = new KeyboardEngine(EVISION, deviceLibrary);
     Engine.updateModel(forcedModel);
-	onfpsChanged();
-    device.log(`[Система] Инициализация Redragon K580 завершена. Настройки: FPS=${fps}, PacketSize=${packetSize}, Pause=${packetPause}ms`);
+	
+	const bSize = parseInt(packetSize) || 48;
+    const testData = new Array(bSize).fill(0);
+    const testCS = EVISION.calculateChecksum(testData, 0, bSize);
+    const csHex = `0x${testCS.high.toString(16).toUpperCase()}${testCS.low.toString(16).padStart(2, '0').toUpperCase()}`;
+	
+	device.log(`[Система] Инициализация Redragon K580 (v1.3.0) завершена.`);
+	device.log(`[Настройки] Режим: Авто-FPS, PacketSize=${packetSize}, Pause=${packetPause}ms`);
+	device.log(`[Настройки] Чексумма: ${useChecksum ? "Включена" : "Отключена"} (CS пакета #0: ${csHex})`);
 }
 export function Render() { 
+    const now = Date.now();
+    
+    if (now - lastRenderTime < 20) {
+        return;
+    }
+
     if (Engine && forcedModel !== "None") {
-        Engine.render(); 
+        lastRenderTime = now;
+        Engine.render(); // Здесь код «зависает» на время всех пауз внутри пакетов
     }
 }
 export function Shutdown(SystemSuspending) {
+    if (Engine) {
+        device.log("[Система] Выключение: очистка подсветки.");
+        const bSize = parseInt(packetSize) || 48;
+        const blackData = new Array(500).fill(0);
+        
+        for (let i = 0; i < 10; i++) { // Отправляем 10 пакетов (хватит на всю клавиатуру)
+            EVISION.writePacket(i, blackData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, 1);
+        }
+    }
 }
 export function onforcedModelChanged() { 
     if (Engine) {
         Engine.updateModel(forcedModel); 
         device.log(`[Модель] Переключено на: ${forcedModel}`);
     }
-}
-export function onfpsChanged() {
-    const targetFps = parseInt(fps) || 30;
-    if (typeof device.setFrameRate === "function") {
-        device.setFrameRate(targetFps);
-    } else if (typeof device.setFramerate === "function") {
-        device.setFramerate(targetFps);
-    }
-    device.log(`[Настройки] Частота кадров изменена на: ${fps}`);
 }
 export function onpacketSizeChanged() {
     device.log(`[Настройки] Размер пакета изменен на: ${packetSize} байт`);
@@ -262,5 +277,12 @@ export function onpacketPauseChanged() {
     device.log(`[Настройки] Пауза между пакетами: ${packetPause} мс`);
 }
 export function onuseChecksumChanged() {
-    device.log(`[Настройки] Проверка контрольной суммы: ${useChecksum ? "Включена" : "Отключена"}`);
+    if(!EVISION) return;
+    const bSize = parseInt(packetSize) || 48;
+    const testData = new Array(bSize).fill(0);
+    const testCS = EVISION.calculateChecksum(testData, 0, bSize);
+	const csHex = `0x${testCS.high.toString(16).toUpperCase()}${testCS.low.toString(16).padStart(2, '0').toUpperCase()}`;
+    
+    const status = useChecksum ? "Включена" : "Отключена";
+    device.log(`[Настройки] Проверка контрольной суммы: ${status}. Тестовый байт (CS пакет #0): ${csHex}`);
 }
