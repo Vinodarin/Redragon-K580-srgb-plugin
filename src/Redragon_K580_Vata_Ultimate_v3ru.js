@@ -76,8 +76,8 @@ class EvisionProtocol {
 	writePacket(index, data, bytesToSend, useChecksum, pauseTime) {
         const fullData = new Array(bytesToSend).fill(0);
         for(let i = 0; i < data.length; i++) {
-            fullData[i] = data[i];
-        }
+			fullData[i] = data[i] || 0;
+		}
     
         const bytesSent = index * bytesToSend;
         const checksum = useChecksum ? this.calculateChecksum(fullData, index, bytesToSend) : { low: 0, high: 0 };
@@ -94,7 +94,7 @@ class EvisionProtocol {
 
         device.write(packet, 64);
         if (pauseTime > 0) {
-			device.pause(pauseTime);
+            device.pause(pauseTime);
         }
     }
 }
@@ -146,7 +146,8 @@ class KeyboardEngine {
 		const intensityVal = parseFloat(canvasIntensity) || 2;
         const smoothK = parseFloat(smoothSpeed);
         const [tR, tG, tB] = this.hexToRgb(forcedColor);
-        const RGBData = [];
+        const maxLedIdx = Math.max(...model.vLeds);
+		const RGBData = new Array((maxLedIdx + 1) * 3).fill(0);
         
 		for (let i = 0; i < model.vLeds.length; i++) {
             const [px, py] = model.vLedPositions[i] || [0, 0];
@@ -184,16 +185,16 @@ class KeyboardEngine {
                 b = this.lastRGBData[idx+2] + (b - this.lastRGBData[idx+2]) * smoothK;
             }
 
-            RGBData[idx] = Math.min(255, Math.round(r));
-            RGBData[idx+1] = Math.min(255, Math.round(g));
-            RGBData[idx+2] = Math.min(255, Math.round(b));
+            RGBData[idx] = Math.min(255, Math.max(0, Math.round(r)));
+            RGBData[idx+1] = Math.min(255, Math.max(0, Math.round(g)));
+            RGBData[idx+2] = Math.min(255, Math.max(0, Math.round(b)));
             this.lastRGBData[idx] = r; this.lastRGBData[idx+1] = g; this.lastRGBData[idx+2] = b;
         }
 
         const bSize = parseInt(packetSize) || 48;
-		const pPause = parseInt(packetPause) || 2;
+        const pPause = parseInt(packetPause) || 2;
         for (let i = 0; i < Math.ceil(RGBData.length / bSize); i++) {
-            this.protocol.writePacket(i, RGBData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, packetPause);
+            this.protocol.writePacket(i, RGBData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, pPause);
         }
     }
 }
@@ -218,7 +219,7 @@ export function ControllableParameters() {
         {property:"LightingMode", group:"lighting", label:"Режим работы", type:"combobox", values:["Canvas", "Canvas + Tint", "Canvas Blend", "Forced"], default:"Canvas"},
 		{property:"forcedColor", group:"lighting", label:"Цвет (Force/Tint)", type:"color", default:"#FF0000", isVisible: "LightingMode === 'Forced' || LightingMode === 'Canvas + Tint'"},
 		{property:"smoothSpeed", group:"lighting", label:"Плавность", type:"combobox", values:["0.1", "0.2", "0.3", "0.5", "1.0"], default:"0.3"},
-		{property:"canvasIntensity", group:"lighting", label:"Яркость", type:"number", min:1, max:10, default:2},
+		{property:"canvasIntensity", group:"lighting", label:"Яркость", type:"number", min:1, max:5, default:5},
 		{property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48"], default:"48"},
         {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"2"},
         {property:"useChecksum", group:"settings", label:"Чексумма", type:"boolean", default:true},
