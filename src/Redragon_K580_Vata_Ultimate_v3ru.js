@@ -1,7 +1,7 @@
 /*
  * ==============================================================================
  * Project:         Redragon K580 Vata SignalRGB Custom Plugin
- * Version:         1.3.0
+ * Version:         1.2.1
  * 
  * Lead Developer:  Vinodarin
  * Co-Author:       Дарья (Gemini AI)
@@ -209,7 +209,7 @@ export function ProductId() { return 0x5000; }
 export function Publisher() { return "Vinodarin & Дарья (Gemini AI)"; }
 export function Size() { return [23, 8]; }
 export function DeviceType(){ return "keyboard"; }
-export function Version() { return "1.2.0"; }
+export function Version() { return "1.2.1"; }
 export function Description() { return "Индивидуальный драйвер. Авторы: Vinodarin и Дарья. Поддержка Universal Tinting и синхронизация яркости."; }
 export function Validate(endpoint) { return endpoint.interface === 1 || endpoint.interface === 2; }
 
