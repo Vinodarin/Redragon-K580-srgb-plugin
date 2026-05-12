@@ -1,7 +1,7 @@
 /*
  * ==============================================================================
  * Project:         Redragon K580 Vata SignalRGB Custom Plugin
- * Version:         1.2.0
+ * Version:         1.3.0
  * 
  * Lead Developer:  Vinodarin
  * Co-Author:       Дарья (Gemini AI)
@@ -105,6 +105,7 @@ class KeyboardEngine {
         this.protocol = protocol;
         this.library = library;
         this.currentModel = null;
+		this.lastRGBData = [];
     }
 
     hexToRgb(hex) {
@@ -121,11 +122,8 @@ class KeyboardEngine {
 	}
 
     updateModel(modelName) {
-		const cleanName = modelName.trim();
-        if (cleanName === "None") {
-            this.currentModel = null;
-            return;
-        }
+        const cleanName = modelName.trim();
+        if (cleanName === "None") { this.currentModel = null; return; }
         const props = this.library[cleanName];
         if (props) {
             this.currentModel = props;
@@ -133,71 +131,68 @@ class KeyboardEngine {
             device.setImageFromUrl(props.image);
             device.setSize(props.size);
             device.setControllableLeds(props.vLedNames, props.vLedPositions);
-            
-            // Поиск эндпоинта
             const hid = device.getHidEndpoints();
             const target = props.endpoint[0];
             const found = hid.find(e => e.interface === target.interface && e.usage === target.usage);
-            
-            if (found) {
-                device.set_endpoint(found.interface, found.usage, found.usage_page, found.collection);
-            }
+            if (found) { device.set_endpoint(found.interface, found.usage, found.usage_page, found.collection); }
+            this.lastRGBData = new Array(props.vLeds.length * 3).fill(0);
         }
     }
 
 	render() {
         if (!this.currentModel) return;
-		
-		const currentMode = LightingMode.trim();
-        const { vLeds, vLedPositions } = this.currentModel;
-		const RGBData = [];
-                
+        const model = this.currentModel;
         const systemBrightness = device.getBrightness() / 255;
-        const targetRGB = this.hexToRgb(forcedColor);
-		const [tR, tG, tB] = targetRGB;
-
-        for (let i = 0; i < vLeds.length; i++) {
-            const [px, py] = vLedPositions[i];
-			const screen = device.color(px, py);
+		const intensityVal = parseFloat(canvasIntensity) || 2;
+        const smoothK = parseFloat(smoothSpeed);
+        const [tR, tG, tB] = this.hexToRgb(forcedColor);
+        const RGBData = [];
+        
+		for (let i = 0; i < model.vLeds.length; i++) {
+            const [px, py] = model.vLedPositions[i] || [0, 0];
+            const screen = device.color(px, py);
             let r, g, b;
-			
-			switch (currentMode) {
 
-				case "Forced":
-					r = tR * systemBrightness;
-					g = tG * systemBrightness;
-					b = tB * systemBrightness;
-					break;
-             
-				case "Canvas + Tint":
-					const luma = (0.2126 * screen[0] + 0.7152 * screen[1] + 0.0722 * screen[2]) / 255;
-					const boost = 2.0;
-					r = tR * luma * boost * systemBrightness;
-					g = tG * luma * boost * systemBrightness;
-					b = tB * luma * boost * systemBrightness;
-					break;
-			
+            switch (LightingMode) {
+                case "Canvas + Tint":
+				    const luma = (0.2126 * screen[0] + 0.7152 * screen[1] + 0.0722 * screen[2]) / 255;
+                    r = tR * luma * intensityVal * systemBrightness;
+                    g = tG * luma * intensityVal * systemBrightness;
+                    b = tB * luma * intensityVal * systemBrightness;
+                    break;
 				case "Canvas Blend":
-					const blendBoost = 1.2;
-					r = (screen[0] * targetRGB[0] / 255) * systemBrightness * blendBoost;
-					g = (screen[1] * targetRGB[1] / 255) * systemBrightness * blendBoost;
-					b = (screen[2] * targetRGB[2] / 255) * systemBrightness * blendBoost;
-					break;
-							
-				default:
-					[r, g, b] = screen;
-					break;
+                    r = (screen[0] * 0.5 + tR * 0.5) * intensityVal * systemBrightness;
+                    g = (screen[1] * 0.5 + tG * 0.5) * intensityVal * systemBrightness;
+                    b = (screen[2] * 0.5 + tB * 0.5) * intensityVal * systemBrightness;
+                    break;
+                case "Forced":
+				    r = tR * intensityVal * systemBrightness;
+					g = tG * intensityVal * systemBrightness;
+					b = tB * intensityVal * systemBrightness;
+                    break;
+                default: // Canvas
+					r = screen[0] * intensityVal * systemBrightness;
+					g = screen[1] * intensityVal * systemBrightness;
+					b = screen[2] * intensityVal * systemBrightness;
+                    break;
             }
 
-            const idx = vLeds[i] * 3;
-            RGBData[idx]     = Math.min(255, Math.round(r));
-            RGBData[idx + 1] = Math.min(255, Math.round(g));
-            RGBData[idx + 2] = Math.min(255, Math.round(b));
+            const idx = model.vLeds[i] * 3;
+            if (smoothK < 1.0 && this.lastRGBData[idx] !== undefined) {
+                r = this.lastRGBData[idx] + (r - this.lastRGBData[idx]) * smoothK;
+                g = this.lastRGBData[idx+1] + (g - this.lastRGBData[idx+1]) * smoothK;
+                b = this.lastRGBData[idx+2] + (b - this.lastRGBData[idx+2]) * smoothK;
+            }
+
+            RGBData[idx] = Math.min(255, Math.round(r));
+            RGBData[idx+1] = Math.min(255, Math.round(g));
+            RGBData[idx+2] = Math.min(255, Math.round(b));
+            this.lastRGBData[idx] = r; this.lastRGBData[idx+1] = g; this.lastRGBData[idx+2] = b;
         }
 
-        const bSize = packetSize || 48;
-		const packetCount = Math.ceil(RGBData.length / bSize);
-        for (let i = 0; i < packetCount; i++) {
+        const bSize = parseInt(packetSize) || 48;
+		const pPause = parseInt(packetPause) || 2;
+        for (let i = 0; i < Math.ceil(RGBData.length / bSize); i++) {
             this.protocol.writePacket(i, RGBData.slice(i * bSize, i * bSize + bSize), bSize, useChecksum, packetPause);
         }
     }
@@ -222,6 +217,8 @@ export function ControllableParameters() {
         {property:"forcedModel", group:"lighting", label:"Модель", type:"combobox", values: [" Redragon K580 Vata ", " None "], default: " Redragon K580 Vata "},
         {property:"LightingMode", group:"lighting", label:"Режим работы", type:"combobox", values:["Canvas", "Canvas + Tint", "Canvas Blend", "Forced"], default:"Canvas"},
 		{property:"forcedColor", group:"lighting", label:"Цвет (Force/Tint)", type:"color", default:"#FF0000", isVisible: "LightingMode === 'Forced' || LightingMode === 'Canvas + Tint'"},
+		{property:"smoothSpeed", group:"lighting", label:"Плавность", type:"combobox", values:["0.1", "0.2", "0.3", "0.5", "1.0"], default:"0.3"},
+		{property:"canvasIntensity", group:"lighting", label:"Яркость", type:"number", min:1, max:10, default:2},
 		{property:"packetSize", group:"settings", label:"Размер пакета (байт)", type:"combobox", values:["24", "32", "48"], default:"48"},
         {property:"packetPause", group:"settings", label:"Пауза (мс)", type:"combobox", values:["1", "2", "3", "5", "10"], default:"2"},
         {property:"useChecksum", group:"settings", label:"Чексумма", type:"boolean", default:true},
@@ -233,7 +230,7 @@ export function Initialize() {
     Engine = new KeyboardEngine(EVISION, deviceLibrary);
     Engine.updateModel(forcedModel);
 	onfpsChanged();
-    device.log(`[Система] Инициализация завершена. Настройки: FPS=${fps}, PacketSize=${packetSize}, Pause=${packetPause}ms`);
+    device.log(`[Система] Инициализация Redragon K580 завершена. Настройки: FPS=${fps}, PacketSize=${packetSize}, Pause=${packetPause}ms`);
 }
 export function Render() { 
     if (Engine && forcedModel !== "None") {
